@@ -97,8 +97,8 @@ def summarize_report(report: dict[str, Any]) -> str:
 
     if report["new_tags"]:
         lines.append("## Newly Detected Plist Keys")
-        for item in report["new_tags"]:
-            lines.append(f"- {item['bundle']} :: {item['file']} :: {item['key_path']}")
+        for key_path in report["new_tags"]:
+            lines.append(f"- {key_path}")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
@@ -112,9 +112,7 @@ def build_report(old_root: Path, new_root: Path, max_key_entries: int) -> dict[s
     common_bundles = sorted(old_bundles & new_bundles)
 
     new_tags_by_bundle: list[dict[str, Any]] = []
-    new_tags: list[dict[str, str]] = []
-
-    total_new_keys = 0
+    all_new_key_paths: set[str] = set()
 
     for bundle in common_bundles:
         old_bundle = old_root / bundle
@@ -133,7 +131,7 @@ def build_report(old_root: Path, new_root: Path, max_key_entries: int) -> dict[s
             if sha256sum(old_file) != sha256sum(new_file):
                 files_changed.append(rel_path)
 
-        new_key_paths: list[dict[str, str]] = []
+        bundle_new_key_paths: set[str] = set()
         plist_candidates = sorted(set(files_added) | set(files_changed))
         for rel_path in plist_candidates:
             old_file = old_bundle / rel_path
@@ -151,19 +149,19 @@ def build_report(old_root: Path, new_root: Path, max_key_entries: int) -> dict[s
             added_paths = sorted(new_paths - old_paths)
 
             for key_path in added_paths:
-                entry = {"bundle": bundle, "file": rel_path, "key_path": key_path}
-                new_key_paths.append(entry)
-                if len(new_tags) < max_key_entries:
-                    new_tags.append(entry)
+                bundle_new_key_paths.add(key_path)
+                all_new_key_paths.add(key_path)
 
-        if new_key_paths:
+        if bundle_new_key_paths:
             new_tags_by_bundle.append(
                 {
                     "bundle": bundle,
-                    "new_key_paths": new_key_paths[:max_key_entries],
+                    "new_key_paths": sorted(bundle_new_key_paths)[:max_key_entries],
                 }
             )
-        total_new_keys += len(new_key_paths)
+
+    new_tags = sorted(all_new_key_paths)[:max_key_entries]
+    total_new_keys = len(all_new_key_paths)
 
     report = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),

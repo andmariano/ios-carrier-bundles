@@ -237,7 +237,9 @@ jobs:
           PORTUGAL_BASE="/tmp/base-bundles/Country Bundles/Portugal.bundle"
           PORTUGAL_HEAD="/tmp/head-bundles/Country Bundles/Portugal.bundle"
           if [ -d "$PORTUGAL_BASE" ] || [ -d "$PORTUGAL_HEAD" ]; then
-            diff -rq "$PORTUGAL_BASE" "$PORTUGAL_HEAD" > /tmp/portugal_changes.txt || true
+            python3 scripts/detailed_dir_diff.py \
+              --base-dir "$PORTUGAL_BASE" \
+              --head-dir "$PORTUGAL_HEAD" > /tmp/portugal_changes.txt
           else
             : > /tmp/portugal_changes.txt
           fi
@@ -260,7 +262,17 @@ jobs:
             HEAD_DIR="/tmp/head-bundles/Carrier Bundles/${bundle_name}"
 
             if [ -d "$BASE_DIR" ] || [ -d "$HEAD_DIR" ]; then
-              diff -rq "$BASE_DIR" "$HEAD_DIR" 2>/dev/null | sed "s#^#${bundle_name}: #" >> /tmp/pt_carrier_bundle_changes.txt || true
+              BUNDLE_DIFF=$(python3 scripts/detailed_dir_diff.py \
+                --base-dir "$BASE_DIR" \
+                --head-dir "$HEAD_DIR")
+
+              if [ -n "$BUNDLE_DIFF" ]; then
+                {
+                  echo "===== ${bundle_name} ====="
+                  echo "$BUNDLE_DIFF"
+                  echo
+                } >> /tmp/pt_carrier_bundle_changes.txt
+              fi
             fi
           done <<< "$PT_BUNDLE_LIST"
 
@@ -268,6 +280,10 @@ jobs:
             PT_CARRIER_CHANGED="true"
             TITLE_PREFIX="${TITLE_PREFIX}[_pt Carrier Bundles Changed] "
           fi
+
+          mkdir -p "${GITHUB_WORKSPACE}/reports"
+          cp /tmp/portugal_changes.txt "${GITHUB_WORKSPACE}/reports/portugal-bundle-diff.txt"
+          cp /tmp/pt_carrier_bundle_changes.txt "${GITHUB_WORKSPACE}/reports/pt-carrier-bundles-diff.txt"
 
           TITLE="${TITLE_PREFIX}New Carriers/Tags Report: iOS ${IOS_VERSION} (${IOS_BUILD})"
 
@@ -298,7 +314,7 @@ jobs:
           script: |
             const fs = require('fs');
             const MAX_ISSUE_BODY_CHARS = 65536;
-            const ISSUE_BODY_TARGET_CHARS = 64000;
+            const ISSUE_BODY_TARGET_CHARS = 65000;
 
             const reportJson = fs.readFileSync(process.env.REPORT_JSON_PATH, 'utf8');
             const portugalChanged = process.env.PORTUGAL_CHANGED === 'true';
@@ -318,10 +334,6 @@ jobs:
               return content.slice(0, sliceLen) + notice;
             }
 
-            const truncatedPortugalChanges = truncateForBlock(portugalChanges, 6000);
-            const truncatedPtCarrierChanges = truncateForBlock(ptCarrierChanges, 12000);
-            const truncatedReportJson = truncateForBlock(reportJson, 42000);
-
             const portugalSection = portugalChanged
               ? [
                   '## Portugal Country Bundle Alert',
@@ -329,7 +341,7 @@ jobs:
                   'Changes detected in `Country Bundles/Portugal.bundle`.',
                   '',
                   '```text',
-                  truncatedPortugalChanges,
+                  portugalChanges,
                   '```',
                   ''
                 ].join('\n')
@@ -347,7 +359,7 @@ jobs:
                   'Changes detected in carrier bundles matching `Carrier Bundles/*_pt.bundle`.',
                   '',
                   '```text',
-                  truncatedPtCarrierChanges,
+                  ptCarrierChanges,
                   '```',
                   ''
                 ].join('\n')
@@ -358,7 +370,7 @@ jobs:
                   ''
                 ].join('\n');
 
-            const body = [
+            const preamble = [
               `Automated carrier bundle report.`,
               '',
               `- Compare base: ${process.env.COMPARE_BASE}`,
@@ -367,14 +379,20 @@ jobs:
               `- Full report artifact: ${process.env.RUN_URL}#artifacts`,
               '',
               portugalSection,
-              ptCarrierSection,
-              '<details><summary>Raw JSON report</summary>',
-              '',
-              '```json',
+              ptCarrierSection
+            ].join('\n');
+
+            const jsonOpen = ['<details><summary>Raw JSON report</summary>', '', '```json'].join('\n');
+            const jsonClose = ['```', '', '</details>'].join('\n');
+            const reservedChars = preamble.length + jsonOpen.length + jsonClose.length + 2;
+            const jsonBudget = Math.max(0, ISSUE_BODY_TARGET_CHARS - reservedChars);
+            const truncatedReportJson = truncateForBlock(reportJson, jsonBudget);
+
+            const body = [
+              preamble,
+              jsonOpen,
               truncatedReportJson,
-              '```',
-              '',
-              '</details>'
+              jsonClose,
             ].join('\n');
 
             let finalBody = body;
