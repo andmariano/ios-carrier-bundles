@@ -54,14 +54,34 @@ jobs:
             exit 1
           fi
 
+          SUPPORTS_BETA_FLAG="false"
           BETA_FLAG=()
           if [ "${INCLUDE_BETA}" = "true" ]; then
-            BETA_FLAG=(--beta)
+            if ipsw download ipsw --help 2>&1 | grep -q -- '--beta'; then
+              SUPPORTS_BETA_FLAG="true"
+              BETA_FLAG=(--beta)
+            else
+              echo "::warning::include_beta=true but installed ipsw does not support --beta; using API beta fallback resolver."
+            fi
           fi
 
           CURRENT_BUILD=$(jq -r '.build // empty' ipsw_metadata.json 2>/dev/null || true)
-          LATEST_BUILD=$(ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --show-latest-build --no-color | tr -d '\r' | tail -n1 | xargs)
-          LATEST_VERSION=$(ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --show-latest-version --no-color | tr -d '\r' | tail -n1 | xargs)
+
+          if [ "${INCLUDE_BETA}" = "true" ] && [ "${SUPPORTS_BETA_FLAG}" = "false" ]; then
+            BETA_JSON=$(python3 scripts/latest_beta_build.py --device "${DEVICE}")
+
+            LATEST_BUILD=$(echo "${BETA_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("build",""))' | tr -d '\r' | xargs)
+            LATEST_VERSION=$(echo "${BETA_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' | tr -d '\r' | xargs)
+
+            if [ -z "${LATEST_BUILD}" ]; then
+              echo "::warning::Beta fallback resolver did not return a build; falling back to stable latest lookup."
+              LATEST_BUILD=$(ipsw download ipsw --device "${DEVICE}" --show-latest-build --no-color | tr -d '\r' | tail -n1 | xargs)
+              LATEST_VERSION=$(ipsw download ipsw --device "${DEVICE}" --show-latest-version --no-color | tr -d '\r' | tail -n1 | xargs)
+            fi
+          else
+            LATEST_BUILD=$(ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --show-latest-build --no-color | tr -d '\r' | tail -n1 | xargs)
+            LATEST_VERSION=$(ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --show-latest-version --no-color | tr -d '\r' | tail -n1 | xargs)
+          fi
 
           if [ -z "${LATEST_BUILD}" ]; then
             echo "::error::Failed to resolve latest iOS build for device ${DEVICE}."
@@ -77,12 +97,14 @@ jobs:
           echo "current_build=${CURRENT_BUILD}" >> "$GITHUB_OUTPUT"
           echo "latest_build=${LATEST_BUILD}" >> "$GITHUB_OUTPUT"
           echo "latest_version=${LATEST_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "supports_beta_flag=${SUPPORTS_BETA_FLAG}" >> "$GITHUB_OUTPUT"
           echo "should_update=${SHOULD_UPDATE}" >> "$GITHUB_OUTPUT"
 
           echo "Current build: ${CURRENT_BUILD:-none}"
           echo "Latest build: ${LATEST_BUILD}"
           echo "Latest version: ${LATEST_VERSION}"
           echo "Include beta: ${INCLUDE_BETA}"
+          echo "Supports --beta flag: ${SUPPORTS_BETA_FLAG}"
           echo "Should update: ${SHOULD_UPDATE}"
 
       - name: No new iOS build detected
@@ -126,12 +148,21 @@ jobs:
 
           BETA_FLAG=()
           if [ "${INCLUDE_BETA}" = "true" ]; then
-            BETA_FLAG=(--beta)
+            if [ "${{ steps.check_build.outputs.supports_beta_flag }}" = "true" ]; then
+              BETA_FLAG=(--beta)
+            else
+              echo "Using explicit build download because --beta is unavailable in this ipsw CLI."
+            fi
           fi
 
           mkdir -p "${RUNNER_TEMP}/ipsw"
           cd "${RUNNER_TEMP}/ipsw"
-          ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --latest --no-color --output "${RUNNER_TEMP}/ipsw"
+
+          if [ "${INCLUDE_BETA}" = "true" ] && [ "${{ steps.check_build.outputs.supports_beta_flag }}" = "false" ]; then
+            ipsw download ipsw --device "${DEVICE}" --build "${{ steps.check_build.outputs.latest_build }}" --confirm --no-color --output "${RUNNER_TEMP}/ipsw"
+          else
+            ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --latest --no-color --output "${RUNNER_TEMP}/ipsw"
+          fi
       
       - name: Extract Carrier Bundles From IPSW
         if: steps.check_build.outputs.should_update == 'true'

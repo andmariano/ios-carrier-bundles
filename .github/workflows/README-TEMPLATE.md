@@ -26,7 +26,7 @@ The GitHub Actions workflow supports manual inputs when you run `Update Carrier 
 - Default device: iPhone 17 Pro Max (`iPhone18,3`)
 - Override: Actions → `Update Carrier Bundles` → `Run workflow` → set `device`
 - If no input is provided, workflow uses the default `iPhone18,3`
-- `include_beta` defaults to `true` (set `false` for stable-only latest build checks)
+- `include_beta` defaults to `true` (set `false` for stable-only latest build checks); if the installed `ipsw` does not support `--beta`, workflow resolves latest beta build via `ipsw.me` (and falls back to `ipsw.dev`) and downloads by build ID
 
 ## Automation + Alerts
 
@@ -43,7 +43,7 @@ Use `Carrier Bundle Change Alerts` with `Run workflow` and set:
 - `head_version`: iOS version for head snapshot (example: `26.3`)
 - `base_build`: optional base build for exact beta/RC targeting (example: `23E5222f`)
 - `head_build`: optional head build for exact beta/RC targeting (example: `23E5230a`)
-- `include_beta`: defaults to `true` (set `false` for stable-only lookup)
+- `include_beta`: defaults to `true` (set `false` for stable-only lookup); if `--beta` is unsupported by installed `ipsw`, workflow resolves latest beta build via `ipsw.me` with `ipsw.dev` fallback
 - Optional fallback: `base_ref` / `head_ref` for git refs or commit SHAs
 
 When `base_build`/`head_build` are set, build targeting takes priority for download lookup.

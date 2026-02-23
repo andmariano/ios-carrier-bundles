@@ -210,7 +210,11 @@ jobs:
             local beta_flag=()
 
             if [ "$include_beta" = "true" ]; then
-              beta_flag=(--beta)
+              if ipsw download ipsw --help 2>&1 | grep -q -- '--beta'; then
+                beta_flag=(--beta)
+              else
+                echo "::warning::include_beta=true but installed ipsw does not support --beta; falling back to stable-only lookup for ${side}."
+              fi
             fi
 
             rm -rf "$side_root" "$ipsw_dir" "$extract_dir"
@@ -448,37 +452,10 @@ jobs:
               })
               .filter(Boolean);
 
-            function keyPrefix(keyPath) {
-              if (typeof keyPath !== 'string' || keyPath.length === 0) return 'Other';
-              const dotIdx = keyPath.indexOf('.');
-              const listIdx = keyPath.indexOf('[]');
-              const splitIdx = [dotIdx, listIdx].filter(idx => idx >= 0).sort((a, b) => a - b)[0];
-              if (splitIdx === undefined) return keyPath;
-              return keyPath.slice(0, splitIdx) || keyPath;
-            }
-
-            let keyLines = ['- None detected.'];
-            if (newKeyPaths.length > 0) {
-              const grouped = new Map();
-              for (const keyPath of newKeyPaths) {
-                const prefix = keyPrefix(keyPath);
-                if (!grouped.has(prefix)) grouped.set(prefix, []);
-                grouped.get(prefix).push(keyPath);
-              }
-
-              const prefixes = Array.from(grouped.keys()).sort((a, b) => a.localeCompare(b));
-              const lines = [];
-              for (const prefix of prefixes) {
-                lines.push(`### ${prefix}`);
-                lines.push('');
-                const keysForPrefix = grouped.get(prefix).sort((a, b) => a.localeCompare(b));
-                for (const keyPath of keysForPrefix) {
-                  lines.push(`- ${keyPath}`);
-                }
-                lines.push('');
-              }
-              keyLines = lines;
-            }
+            const uniqueKeyPaths = Array.from(new Set(newKeyPaths)).sort((a, b) => a.localeCompare(b));
+            const keyLines = uniqueKeyPaths.length > 0
+              ? uniqueKeyPaths.map(keyPath => `- ${keyPath}`)
+              : ['- None detected.'];
 
             const keysHeader = ['## Newly Detected Plist Keys', ''].join('\n');
             const keysFooter = [''].join('\n');
