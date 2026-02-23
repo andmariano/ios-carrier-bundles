@@ -5,25 +5,94 @@
 	<key>PayloadContent</key>
 	<array>
 		<dict>
+			<key>AutoJoin</key>
+			<true/>
+			<key>CaptiveBypass</key>
+			<false/>
+			<key>DisableAssociationMACRandomization</key>
+			<false/>
+			<key>DisplayedOperatorName</key>
+			<string>via Bell</string>
+			<key>DomainName</key>
+			<string>bell.ca</string>
 			<key>EAPClientConfiguration</key>
 			<dict>
 				<key>AcceptEAPTypes</key>
 				<array>
-					<integer>18</integer>
+					<integer>23</integer>
 				</array>
-				<key>EAPFASTProvisionPAC</key>
-				<false/>
-				<key>EAPFASTProvisionPACAnonymously</key>
-				<false/>
-				<key>EAPFASTUsePAC</key>
-				<false/>
-				<key>TLSAllowTrustExceptions</key>
+				<key>EAPSIMAKAEncryptedIdentityEnabled</key>
 				<true/>
+				<key>PayloadCertificateAnchorUUID</key>
+				<array>
+					<string>B0E093A4-6DDC-47A7-B3D0-717509254BEC</string>
+				</array>
+				<key>TLSTrustedServerNames</key>
+				<array>
+					<string>imsiencryption</string>
+				</array>
 			</dict>
 			<key>EncryptionType</key>
-			<string>WPA</string>
+			<string>WPA2</string>
 			<key>HIDDEN_NETWORK</key>
+			<false/>
+			<key>IsHotspot</key>
 			<true/>
+			<key>MCCAndMNCs</key>
+			<array>
+				<string>302630</string>
+				<string>302640</string>
+				<string>302610</string>
+			</array>
+			<key>NAIRealmNames</key>
+			<array>
+				<string>wlan.mnc630.mcc302.3gppnetwork.org</string>
+				<string>wlan.mnc640.mcc302.3gppnetwork.org</string>
+				<string>wlan.mnc610.mcc302.3gppnetwork.org</string>
+			</array>
+			<key>PayloadDescription</key>
+			<string>Configures Wi-Fi settings</string>
+			<key>PayloadDisplayName</key>
+			<string>Wi-Fi</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.wifi.managed.B759107F-6256-464C-8219-22C80A178109</string>
+			<key>PayloadOrganization</key>
+			<string>Bell Mobility</string>
+			<key>PayloadType</key>
+			<string>com.apple.wifi.managed</string>
+			<key>PayloadUUID</key>
+			<string>79F59451-4751-4182-A0C9-09B9EA1B9230</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>ProxyType</key>
+			<string>None</string>
+			<key>RoamingConsortiumOIs</key>
+			<array/>
+			<key>ServiceProviderRoamingEnabled</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>EAPClientConfiguration</key>
+			<dict>
+				<key>AcceptEAPTypes</key>
+				<array>
+					<integer>23</integer>
+				</array>
+				<key>EAPSIMAKAEncryptedIdentityEnabled</key>
+				<true/>
+				<key>PayloadCertificateAnchorUUID</key>
+				<array>
+					<string>3B610FCC-E3D2-4E05-A90E-9454A09D40E9</string>
+				</array>
+				<key>TLSTrustedServerNames</key>
+				<array>
+					<string>imsiencryption</string>
+				</array>
+			</dict>
+			<key>EncryptionType</key>
+			<string>WPA2</string>
+			<key>HIDDEN_NETWORK</key>
+			<false/>
 			<key>IsHotspot</key>
 			<true/>
 			<key>PayloadDescription</key>
@@ -48,19 +117,21 @@
 			<dict>
 				<key>AcceptEAPTypes</key>
 				<array>
-					<integer>18</integer>
+					<integer>23</integer>
 				</array>
-				<key>EAPFASTProvisionPAC</key>
-				<false/>
-				<key>EAPFASTProvisionPACAnonymously</key>
-				<false/>
-				<key>EAPFASTUsePAC</key>
-				<false/>
-				<key>TLSAllowTrustExceptions</key>
+				<key>EAPSIMAKAEncryptedIdentityEnabled</key>
 				<true/>
+				<key>PayloadCertificateAnchorUUID</key>
+				<array>
+					<string>97DE838F-6DA2-478B-B7AC-023BCCB10D56</string>
+				</array>
+				<key>TLSTrustedServerNames</key>
+				<array>
+					<string>imsiencryption</string>
+				</array>
 			</dict>
 			<key>EncryptionType</key>
-			<string>WPA</string>
+			<string>WPA2</string>
 			<key>HIDDEN_NETWORK</key>
 			<true/>
 			<key>IsHotspot</key>
