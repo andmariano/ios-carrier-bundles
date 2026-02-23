@@ -20,6 +20,9 @@ jobs:
   ipsw-extraction:
     name: Check Latest iOS Build and Update Carrier Bundles
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
 
@@ -221,6 +224,7 @@ jobs:
           sed -i "s/(DEVICE_PRODNAME)/$DEVICE_PRODNAME/g" README.md
           
       - name: Commit Changes
+        id: commit_changes
         if: steps.check_build.outputs.should_update == 'true'
         run: |
           cd ${GITHUB_WORKSPACE}
@@ -233,7 +237,35 @@ jobs:
           git add .
           if git diff --cached --quiet; then
             echo "No changes detected; skipping commit and push."
+            echo "new_sha=" >> "$GITHUB_OUTPUT"
+            echo "base_sha=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          BASE_SHA=$(git rev-parse HEAD)
           git commit -m "iOS $IOS_VERSION ($IOS_BUILD) - Update Carrier Bundles"
+          NEW_SHA=$(git rev-parse HEAD)
           git push
+
+          echo "new_sha=${NEW_SHA}" >> "$GITHUB_OUTPUT"
+          echo "base_sha=${BASE_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Carrier Bundle Change Alerts
+        if: steps.check_build.outputs.should_update == 'true' && steps.commit_changes.outputs.new_sha != ''
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/carrier-bundle-change-alerts.yml/dispatches" \
+            -d @- <<JSON
+          {
+            "ref": "${GITHUB_REF_NAME}",
+            "inputs": {
+              "base_ref": "${{ steps.commit_changes.outputs.base_sha }}",
+              "head_ref": "${{ steps.commit_changes.outputs.new_sha }}",
+              "device": "${DEVICE}",
+              "include_beta": "${INCLUDE_BETA}"
+            }
+          }
+          JSON
