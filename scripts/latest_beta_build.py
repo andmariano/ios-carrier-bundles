@@ -30,7 +30,7 @@ def resolve_latest_beta(device: str) -> dict[str, str]:
         with urllib.request.urlopen(request, timeout=20) as response:
             payload: dict[str, Any] = json.load(response)
     except Exception:
-        return {"build": "", "version": ""}
+        return {"build": "", "version": "", "url": ""}
 
     firmwares = payload.get("firmwares") or []
     beta_like = [
@@ -48,6 +48,7 @@ def resolve_latest_beta(device: str) -> dict[str, str]:
     return {
         "build": str(latest.get("buildid", "")),
         "version": str(latest.get("version", "")),
+        "url": str(latest.get("url", "")),
     }
 
 
@@ -59,7 +60,7 @@ def resolve_latest_beta_from_ipsw_dev(device: str) -> dict[str, str]:
         with urllib.request.urlopen(request, timeout=20) as response:
             html = response.read().decode("utf-8", errors="ignore")
     except Exception:
-        return {"build": "", "version": ""}
+        return {"build": "", "version": "", "url": ""}
 
     row_pattern = re.compile(
         r'<tr\s+class="firmware"[^>]*data-signed="(?P<signed>true|false)"[^>]*>.*?'
@@ -87,15 +88,34 @@ def resolve_latest_beta_from_ipsw_dev(device: str) -> dict[str, str]:
         })
 
     if not candidates:
-        return {"build": "", "version": ""}
+        return {"build": "", "version": "", "url": ""}
 
     signed_candidates = [item for item in candidates if bool(item.get("signed"))]
     selected = signed_candidates[0] if signed_candidates else candidates[0]
+    selected_build = str(selected.get("build", ""))
+    ipsw_url = resolve_ipsw_url_from_ipsw_dev(device, selected_build)
 
     return {
-        "build": str(selected.get("build", "")),
+        "build": selected_build,
         "version": str(selected.get("version", "")),
+        "url": ipsw_url,
     }
+
+
+def resolve_ipsw_url_from_ipsw_dev(device: str, build: str) -> str:
+    if not device or not build:
+        return ""
+
+    url = f"https://ipsw.dev/download/{device}/{build}"
+    try:
+        request = urllib.request.Request(url, headers=REQUEST_HEADERS)
+        with urllib.request.urlopen(request, timeout=20) as response:
+            html = response.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+    match = re.search(r'https://updates\.cdn-apple\.com[^"\'\s]+\.ipsw', html, re.IGNORECASE)
+    return match.group(0) if match else ""
 
 
 def parse_args() -> argparse.Namespace:

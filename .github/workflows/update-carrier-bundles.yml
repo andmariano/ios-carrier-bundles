@@ -72,15 +72,18 @@ jobs:
 
             LATEST_BUILD=$(echo "${BETA_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("build",""))' | tr -d '\r' | xargs)
             LATEST_VERSION=$(echo "${BETA_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' | tr -d '\r' | xargs)
+            LATEST_URL=$(echo "${BETA_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("url",""))' | tr -d '\r' | xargs)
 
             if [ -z "${LATEST_BUILD}" ]; then
               echo "::warning::Beta fallback resolver did not return a build; falling back to stable latest lookup."
               LATEST_BUILD=$(ipsw download ipsw --device "${DEVICE}" --show-latest-build --no-color | tr -d '\r' | tail -n1 | xargs)
               LATEST_VERSION=$(ipsw download ipsw --device "${DEVICE}" --show-latest-version --no-color | tr -d '\r' | tail -n1 | xargs)
+              LATEST_URL=""
             fi
           else
             LATEST_BUILD=$(ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --show-latest-build --no-color | tr -d '\r' | tail -n1 | xargs)
             LATEST_VERSION=$(ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --show-latest-version --no-color | tr -d '\r' | tail -n1 | xargs)
+            LATEST_URL=""
           fi
 
           if [ -z "${LATEST_BUILD}" ]; then
@@ -97,6 +100,7 @@ jobs:
           echo "current_build=${CURRENT_BUILD}" >> "$GITHUB_OUTPUT"
           echo "latest_build=${LATEST_BUILD}" >> "$GITHUB_OUTPUT"
           echo "latest_version=${LATEST_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "latest_url=${LATEST_URL}" >> "$GITHUB_OUTPUT"
           echo "supports_beta_flag=${SUPPORTS_BETA_FLAG}" >> "$GITHUB_OUTPUT"
           echo "should_update=${SHOULD_UPDATE}" >> "$GITHUB_OUTPUT"
 
@@ -159,7 +163,14 @@ jobs:
           cd "${RUNNER_TEMP}/ipsw"
 
           if [ "${INCLUDE_BETA}" = "true" ] && [ "${{ steps.check_build.outputs.supports_beta_flag }}" = "false" ]; then
-            ipsw download ipsw --device "${DEVICE}" --build "${{ steps.check_build.outputs.latest_build }}" --confirm --no-color --output "${RUNNER_TEMP}/ipsw"
+            if [ -n "${{ steps.check_build.outputs.latest_url }}" ]; then
+              IPSW_URL="${{ steps.check_build.outputs.latest_url }}"
+              IPSW_FILE="${RUNNER_TEMP}/ipsw/$(basename "${IPSW_URL}")"
+              echo "Downloading beta IPSW directly from resolved URL."
+              curl -fL --retry 3 --retry-delay 2 -o "${IPSW_FILE}" "${IPSW_URL}"
+            else
+              ipsw download ipsw --device "${DEVICE}" --build "${{ steps.check_build.outputs.latest_build }}" --confirm --no-color --output "${RUNNER_TEMP}/ipsw"
+            fi
           else
             ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --latest --no-color --output "${RUNNER_TEMP}/ipsw"
           fi

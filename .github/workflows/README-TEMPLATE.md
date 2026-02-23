@@ -55,13 +55,13 @@ If a ref is not found, the workflow automatically treats that value as an iOS ve
 
 - Across all folders in `Carrier Bundles/*.bundle`, monitoring is only for:
 	- New carrier bundles
-	- Newly detected plist key paths ("new tags")
+	- Newly introduced plist `key_path` options (schema/key presence only)
 - Dedicated alert when `Country Bundles/Portugal.bundle` changes
 - Dedicated alert when any carrier bundle matching `Carrier Bundles/*_pt.bundle` changes
 
 ### Email Notifications
 
-Yes, this can run fully on GitHub (no n8n required):
+This runs fully on GitHub (no n8n required):
 
 1. In your GitHub notification settings, enable email notifications.
 2. Watch this repository and include `Issues` in custom watch settings.
@@ -70,7 +70,7 @@ Each time the report workflow runs on a bundle update, it opens a new issue with
 
 - Detailed value-level diffs for `Country Bundles/Portugal.bundle`
 - Detailed value-level diffs for `Carrier Bundles/*_pt.bundle`
-- Grouped `## Newly Detected Plist Keys` (`key_path` only)
+- A flat `## Newly Detected Plist Keys` list (`key_path` only, deduplicated)
 - A `## Full report artifact` section with links to full files
 
 ## Folder Explanations
