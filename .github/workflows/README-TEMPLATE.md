@@ -25,7 +25,36 @@ The GitHub Actions workflow supports a manual `device` input when you run `Updat
 
 - Default device: iPhone 17 Pro Max (`iPhone18,3`)
 - Override: Actions → `Update Carrier Bundles` → `Run workflow` → set `device`
-- Fallback: if no input is provided, the workflow uses repository variable `DEVICE`
+- If no input is provided, workflow uses the default `iPhone18,3`
+
+## Automation + Alerts
+
+This repo includes two GitHub Actions workflows for automation:
+
+- `Update Carrier Bundles`: runs every 6 hours and can also be run manually
+- `Carrier Bundle Change Alerts`: runs on bundle updates, generates a diff report, and opens a GitHub issue
+
+### What Gets Reported
+
+- Across all folders in `Carrier Bundles/*.bundle`, monitoring is only for:
+	- New carrier bundles
+	- Newly detected plist key paths ("new tags")
+- Dedicated alert when `Country Bundles/Portugal.bundle` changes
+- Dedicated alert when any carrier bundle matching `Carrier Bundles/*_pt.bundle` changes
+
+### Private Repo + Email Notifications
+
+Yes, this can run fully on GitHub (no n8n required):
+
+1. Set the repository visibility to private in GitHub Settings.
+2. In your GitHub notification settings, enable email notifications.
+3. Watch this repository and include `Issues` in custom watch settings.
+
+Each time the report workflow runs on a bundle update, it opens a new issue with:
+
+- A human-readable markdown change report
+- The full raw JSON report in a collapsible section
+- Commit and workflow run links for traceability
 
 ## Folder Explanations
 

@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+import argparse
+import hashlib
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+import plistlib
+from typing import Any
+
+PLIST_SUFFIXES = {".plist", ".mobileconfig"}
+
+
+def sha256sum(file_path: Path) -> str:
+    digest = hashlib.sha256()
+    with file_path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def list_bundle_dirs(root: Path) -> set[str]:
+    if not root.exists():
+        return set()
+    return {entry.name for entry in root.iterdir() if entry.is_dir() and entry.name.endswith(".bundle")}
+
+
+def list_files(bundle_dir: Path) -> set[str]:
+    if not bundle_dir.exists():
+        return set()
+    paths: set[str] = set()
+    for path in bundle_dir.rglob("*"):
+        if path.is_file():
+            paths.add(str(path.relative_to(bundle_dir)).replace("\\", "/"))
+    return paths
+
+
+def try_read_plist(path: Path) -> Any | None:
+    if path.suffix.lower() not in PLIST_SUFFIXES:
+        return None
+    try:
+        with path.open("rb") as handle:
+            return plistlib.load(handle)
+    except Exception:
+        return None
+
+
+def flatten_schema(value: Any, prefix: str = "") -> set[str]:
+    paths: set[str] = set()
+
+    if isinstance(value, dict):
+        if not value and prefix:
+            paths.add(prefix)
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            paths.update(flatten_schema(child, child_prefix))
+        return paths
+
+    if isinstance(value, list):
+        list_prefix = f"{prefix}[]" if prefix else "[]"
+        if not value:
+            paths.add(list_prefix)
+            return paths
+        for item in value:
+            paths.update(flatten_schema(item, list_prefix))
+        return paths
+
+    if prefix:
+        paths.add(prefix)
+    return paths
+
+
+def summarize_report(report: dict[str, Any]) -> str:
+    summary = report["summary"]
+    lines: list[str] = []
+
+    lines.append("# Carrier Bundle Change Report")
+    lines.append("")
+    lines.append(f"Generated: {report['generated_at']}")
+    lines.append("")
+    lines.append("## Summary")
+    lines.append(f"- New carriers detected: {summary['new_carriers_detected']}")
+    lines.append(f"- New plist keys detected: {summary['new_keys_detected']}")
+    lines.append("")
+
+    if report["new_carriers"]:
+        lines.append("## New Carriers")
+        for bundle in report["new_carriers"]:
+            lines.append(f"- {bundle}")
+        lines.append("")
+
+    if report["new_tags_by_bundle"]:
+        lines.append("## New Tags By Bundle")
+        for item in report["new_tags_by_bundle"]:
+            lines.append(f"### {item['bundle']}")
+            lines.append(f"- New plist keys: {len(item['new_key_paths'])}")
+            lines.append("")
+
+    if report["new_tags"]:
+        lines.append("## Newly Detected Plist Keys")
+        for item in report["new_tags"]:
+            lines.append(f"- {item['bundle']} :: {item['file']} :: {item['key_path']}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def build_report(old_root: Path, new_root: Path, max_key_entries: int) -> dict[str, Any]:
+    old_bundles = list_bundle_dirs(old_root)
+    new_bundles = list_bundle_dirs(new_root)
+
+    new_carriers = sorted(new_bundles - old_bundles)
+    common_bundles = sorted(old_bundles & new_bundles)
+
+    new_tags_by_bundle: list[dict[str, Any]] = []
+    new_tags: list[dict[str, str]] = []
+
+    total_new_keys = 0
+
+    for bundle in common_bundles:
+        old_bundle = old_root / bundle
+        new_bundle = new_root / bundle
+
+        old_files = list_files(old_bundle)
+        new_files = list_files(new_bundle)
+
+        files_added = sorted(new_files - old_files)
+        shared_files = sorted(old_files & new_files)
+
+        files_changed: list[str] = []
+        for rel_path in shared_files:
+            old_file = old_bundle / rel_path
+            new_file = new_bundle / rel_path
+            if sha256sum(old_file) != sha256sum(new_file):
+                files_changed.append(rel_path)
+
+        new_key_paths: list[dict[str, str]] = []
+        plist_candidates = sorted(set(files_added) | set(files_changed))
+        for rel_path in plist_candidates:
+            old_file = old_bundle / rel_path
+            new_file = new_bundle / rel_path
+
+            old_plist = try_read_plist(old_file) if old_file.exists() else None
+            new_plist = try_read_plist(new_file) if new_file.exists() else None
+
+            if old_plist is None and new_plist is None:
+                continue
+
+            old_paths = flatten_schema(old_plist) if old_plist is not None else set()
+            new_paths = flatten_schema(new_plist) if new_plist is not None else set()
+
+            added_paths = sorted(new_paths - old_paths)
+
+            for key_path in added_paths:
+                entry = {"bundle": bundle, "file": rel_path, "key_path": key_path}
+                new_key_paths.append(entry)
+                if len(new_tags) < max_key_entries:
+                    new_tags.append(entry)
+
+        if new_key_paths:
+            new_tags_by_bundle.append(
+                {
+                    "bundle": bundle,
+                    "new_key_paths": new_key_paths[:max_key_entries],
+                }
+            )
+        total_new_keys += len(new_key_paths)
+
+    report = {
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "old_root": str(old_root),
+        "new_root": str(new_root),
+        "summary": {
+            "new_carriers_detected": len(new_carriers),
+            "new_keys_detected": total_new_keys,
+        },
+        "new_carriers": new_carriers,
+        "new_tags_by_bundle": new_tags_by_bundle,
+        "new_tags": new_tags,
+    }
+    return report
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate carrier bundle change and key-diff reports")
+    parser.add_argument("--old-dir", required=True, help="Path to previous Carrier Bundles directory")
+    parser.add_argument("--new-dir", required=True, help="Path to current Carrier Bundles directory")
+    parser.add_argument("--output-json", required=True, help="Path for JSON report output")
+    parser.add_argument("--output-md", required=True, help="Path for Markdown report output")
+    parser.add_argument(
+        "--max-key-entries",
+        type=int,
+        default=1000,
+        help="Maximum number of key entries to emit per report section",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    old_dir = Path(args.old_dir)
+    new_dir = Path(args.new_dir)
+    output_json = Path(args.output_json)
+    output_md = Path(args.output_md)
+
+    if not old_dir.exists():
+        raise FileNotFoundError(f"old-dir does not exist: {old_dir}")
+    if not new_dir.exists():
+        raise FileNotFoundError(f"new-dir does not exist: {new_dir}")
+
+    report = build_report(old_dir, new_dir, max_key_entries=args.max_key_entries)
+
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_md.parent.mkdir(parents=True, exist_ok=True)
+
+    output_json.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    output_md.write_text(summarize_report(report), encoding="utf-8")
+
+    print(json.dumps(report["summary"], indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

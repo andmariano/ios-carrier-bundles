@@ -6,8 +6,10 @@ on:
         description: "iOS device identifier (for example: iPhone18,3 for iPhone 17 Pro Max)"
         required: false
         default: iPhone18,3
+  schedule:
+    - cron: '17 */6 * * *'
 env:
-  DEVICE: ${{ github.event.inputs.device || vars.DEVICE }}
+  DEVICE: ${{ github.event.inputs.device || 'iPhone18,3' }}
 
 jobs:
   ipsw-extraction:
@@ -114,5 +116,9 @@ jobs:
           git config --global user.name "${GITHUB_ACTOR}"
           git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
           git add .
+          if git diff --cached --quiet; then
+            echo "No changes detected; skipping commit and push."
+            exit 0
+          fi
           git commit -m "iOS $IOS_VERSION ($IOS_BUILD) - Update Carrier Bundles"
           git push

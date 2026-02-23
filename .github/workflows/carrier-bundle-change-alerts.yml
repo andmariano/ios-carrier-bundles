@@ -1,0 +1,190 @@
+name: Carrier Bundle Change Alerts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Carrier Bundles/**'
+      - 'Country Bundles/**'
+      - 'ipsw_metadata.json'
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Optional base commit/ref to compare against (defaults to previous commit)"
+        required: false
+        default: ""
+
+jobs:
+  generate-report:
+    name: Generate Change Report + Create Issue
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve base commit
+        id: base
+        run: |
+          if [ -n "${{ github.event.inputs.base_ref }}" ]; then
+            BASE_SHA=$(git rev-parse "${{ github.event.inputs.base_ref }}")
+          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="${{ github.event.before }}"
+          else
+            BASE_SHA=$(git rev-parse HEAD^)
+          fi
+
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Using base commit: $BASE_SHA"
+
+      - name: Check out base tree
+        run: |
+          rm -rf /tmp/previous-bundles
+          git worktree add --detach /tmp/previous-bundles "${{ steps.base.outputs.base_sha }}"
+
+      - name: Build carrier bundle diff report
+        run: |
+          python3 scripts/cb_change_report.py \
+            --old-dir "/tmp/previous-bundles/Carrier Bundles" \
+            --new-dir "${GITHUB_WORKSPACE}/Carrier Bundles" \
+            --output-json "${GITHUB_WORKSPACE}/reports/cb-change-report.json" \
+            --output-md "${GITHUB_WORKSPACE}/reports/cb-change-report.md"
+
+      - name: Upload report artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: carrier-bundle-change-report
+          path: reports/
+
+      - name: Prepare issue content
+        id: issue_data
+        run: |
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          IOS_VERSION=$(jq -r '.version // "unknown"' ipsw_metadata.json)
+          IOS_BUILD=$(jq -r '.build // "unknown"' ipsw_metadata.json)
+
+          PORTUGAL_CHANGED="false"
+          PT_CARRIER_CHANGED="false"
+          TITLE_PREFIX=""
+
+          git diff --name-only "${{ steps.base.outputs.base_sha }}" "${GITHUB_SHA}" -- "Country Bundles/Portugal.bundle/**" > /tmp/portugal_changes.txt
+          if [ -s /tmp/portugal_changes.txt ]; then
+            PORTUGAL_CHANGED="true"
+            TITLE_PREFIX="${TITLE_PREFIX}[Portugal Country Bundle Changed] "
+          fi
+
+          git diff --name-only "${{ steps.base.outputs.base_sha }}" "${GITHUB_SHA}" -- "Carrier Bundles/*_pt.bundle/**" > /tmp/pt_carrier_bundle_changes.txt
+          if [ -s /tmp/pt_carrier_bundle_changes.txt ]; then
+            PT_CARRIER_CHANGED="true"
+            TITLE_PREFIX="${TITLE_PREFIX}[_pt Carrier Bundles Changed] "
+          fi
+
+          TITLE="${TITLE_PREFIX}New Carriers/Tags Report: iOS ${IOS_VERSION} (${IOS_BUILD})"
+
+          {
+            echo "title=${TITLE}"
+            echo "run_url=${RUN_URL}"
+            echo "portugal_changed=${PORTUGAL_CHANGED}"
+            echo "portugal_changes_file=/tmp/portugal_changes.txt"
+            echo "pt_carrier_changed=${PT_CARRIER_CHANGED}"
+            echo "pt_carrier_changes_file=/tmp/pt_carrier_bundle_changes.txt"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub issue with report
+        uses: actions/github-script@v7
+        env:
+          REPORT_MD_PATH: reports/cb-change-report.md
+          REPORT_JSON_PATH: reports/cb-change-report.json
+          PORTUGAL_CHANGES_FILE: ${{ steps.issue_data.outputs.portugal_changes_file }}
+          PORTUGAL_CHANGED: ${{ steps.issue_data.outputs.portugal_changed }}
+          PT_CARRIER_CHANGED: ${{ steps.issue_data.outputs.pt_carrier_changed }}
+          PT_CARRIER_CHANGES_FILE: ${{ steps.issue_data.outputs.pt_carrier_changes_file }}
+          RUN_URL: ${{ steps.issue_data.outputs.run_url }}
+          BASE_SHA: ${{ steps.base.outputs.base_sha }}
+          ISSUE_TITLE: ${{ steps.issue_data.outputs.title }}
+        with:
+          script: |
+            const fs = require('fs');
+
+            const markdown = fs.readFileSync(process.env.REPORT_MD_PATH, 'utf8');
+            const reportJson = fs.readFileSync(process.env.REPORT_JSON_PATH, 'utf8');
+            const portugalChanged = process.env.PORTUGAL_CHANGED === 'true';
+            const portugalChanges = fs.existsSync(process.env.PORTUGAL_CHANGES_FILE)
+              ? fs.readFileSync(process.env.PORTUGAL_CHANGES_FILE, 'utf8').trim()
+              : '';
+            const ptCarrierChanged = process.env.PT_CARRIER_CHANGED === 'true';
+            const ptCarrierChanges = fs.existsSync(process.env.PT_CARRIER_CHANGES_FILE)
+              ? fs.readFileSync(process.env.PT_CARRIER_CHANGES_FILE, 'utf8').trim()
+              : '';
+
+            const portugalSection = portugalChanged
+              ? [
+                  '## Portugal Country Bundle Alert',
+                  '',
+                  'Changes detected in `Country Bundles/Portugal.bundle`.',
+                  '',
+                  '```text',
+                  portugalChanges,
+                  '```',
+                  ''
+                ].join('\n')
+              : [
+                  '## Portugal Country Bundle Alert',
+                  '',
+                  'No changes detected in `Country Bundles/Portugal.bundle` for this run.',
+                  ''
+                ].join('\n');
+
+            const ptCarrierSection = ptCarrierChanged
+              ? [
+                  '## _pt Carrier Bundles Alert',
+                  '',
+                  'Changes detected in carrier bundles matching `Carrier Bundles/*_pt.bundle`.',
+                  '',
+                  '```text',
+                  ptCarrierChanges,
+                  '```',
+                  ''
+                ].join('\n')
+              : [
+                  '## _pt Carrier Bundles Alert',
+                  '',
+                  'No changes detected in carrier bundles matching `Carrier Bundles/*_pt.bundle` for this run.',
+                  ''
+                ].join('\n');
+
+            const body = [
+              `Automated carrier bundle report for commit ${context.sha}.`,
+              '',
+              `- Base commit: ${process.env.BASE_SHA}`,
+              `- Head commit: ${context.sha}`,
+              `- Workflow run: ${process.env.RUN_URL}`,
+              '',
+              portugalSection,
+              ptCarrierSection,
+              markdown,
+              '',
+              '<details><summary>Raw JSON report</summary>',
+              '',
+              '```json',
+              reportJson,
+              '```',
+              '',
+              '</details>'
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: process.env.ISSUE_TITLE,
+              body
+            });
+
+      - name: Clean up worktree
+        if: always()
+        run: |
+          git worktree remove /tmp/previous-bundles --force || true
