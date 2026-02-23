@@ -13,8 +13,16 @@ on:
         description: "Base iOS version (preferred for custom version compare, example: 26.0)"
         required: false
         default: ""
+      base_build:
+        description: "Base iOS build (optional, supports beta/RC targeting, example: 23E5222f)"
+        required: false
+        default: ""
       head_version:
         description: "Head iOS version (preferred for custom version compare, example: 26.3)"
+        required: false
+        default: ""
+      head_build:
+        description: "Head iOS build (optional, supports beta/RC targeting, example: 23E5230a)"
         required: false
         default: ""
       base_ref:
@@ -29,6 +37,10 @@ on:
         description: "Device identifier used when version download fallback is needed"
         required: false
         default: iPhone18,3
+      include_beta:
+        description: "Include beta/RC releases when downloading by version/build"
+        required: false
+        default: "true"
 
 env:
   DEVICE: ${{ github.event.inputs.device || 'iPhone18,3' }}
@@ -50,13 +62,24 @@ jobs:
         run: |
           resolve_input() {
             local raw_input="$1"
-            local fallback_git_sha="$2"
+            local raw_build="$2"
+            local fallback_git_sha="$3"
             local source=""
             local value=""
+            local build=""
             local sha=""
             local label=""
 
-            if [ -n "$raw_input" ]; then
+            if [ -n "$raw_build" ]; then
+              source="version"
+              value="$raw_input"
+              build="$raw_build"
+              if [ -n "$raw_input" ]; then
+                label="version:${raw_input} (build:${raw_build})"
+              else
+                label="build:${raw_build}"
+              fi
+            elif [ -n "$raw_input" ]; then
               if git rev-parse --verify --quiet "${raw_input}^{commit}" >/dev/null; then
                 source="git"
                 sha=$(git rev-parse "${raw_input}^{commit}")
@@ -74,7 +97,7 @@ jobs:
               label="git:${sha}"
             fi
 
-            echo "$source|$value|$sha|$label"
+            echo "$source|$value|$build|$sha|$label"
           }
 
           DEFAULT_HEAD_SHA="${GITHUB_SHA}"
@@ -86,19 +109,23 @@ jobs:
 
           BASE_INPUT="${{ github.event.inputs.base_version || github.event.inputs.base_ref }}"
           HEAD_INPUT="${{ github.event.inputs.head_version || github.event.inputs.head_ref }}"
+          BASE_BUILD_INPUT="${{ github.event.inputs.base_build }}"
+          HEAD_BUILD_INPUT="${{ github.event.inputs.head_build }}"
 
-          HEAD_RESULT=$(resolve_input "$HEAD_INPUT" "$DEFAULT_HEAD_SHA")
-          BASE_RESULT=$(resolve_input "$BASE_INPUT" "$DEFAULT_BASE_SHA")
+          HEAD_RESULT=$(resolve_input "$HEAD_INPUT" "$HEAD_BUILD_INPUT" "$DEFAULT_HEAD_SHA")
+          BASE_RESULT=$(resolve_input "$BASE_INPUT" "$BASE_BUILD_INPUT" "$DEFAULT_BASE_SHA")
 
           HEAD_SOURCE=$(echo "$HEAD_RESULT" | cut -d'|' -f1)
           HEAD_VALUE=$(echo "$HEAD_RESULT" | cut -d'|' -f2)
-          HEAD_SHA=$(echo "$HEAD_RESULT" | cut -d'|' -f3)
-          HEAD_LABEL=$(echo "$HEAD_RESULT" | cut -d'|' -f4-)
+          HEAD_BUILD=$(echo "$HEAD_RESULT" | cut -d'|' -f3)
+          HEAD_SHA=$(echo "$HEAD_RESULT" | cut -d'|' -f4)
+          HEAD_LABEL=$(echo "$HEAD_RESULT" | cut -d'|' -f5-)
 
           BASE_SOURCE=$(echo "$BASE_RESULT" | cut -d'|' -f1)
           BASE_VALUE=$(echo "$BASE_RESULT" | cut -d'|' -f2)
-          BASE_SHA=$(echo "$BASE_RESULT" | cut -d'|' -f3)
-          BASE_LABEL=$(echo "$BASE_RESULT" | cut -d'|' -f4-)
+          BASE_BUILD=$(echo "$BASE_RESULT" | cut -d'|' -f3)
+          BASE_SHA=$(echo "$BASE_RESULT" | cut -d'|' -f4)
+          BASE_LABEL=$(echo "$BASE_RESULT" | cut -d'|' -f5-)
 
           NEEDS_DOWNLOAD="false"
           if [ "$BASE_SOURCE" = "version" ] || [ "$HEAD_SOURCE" = "version" ]; then
@@ -108,10 +135,12 @@ jobs:
           {
             echo "base_source=$BASE_SOURCE"
             echo "base_value=$BASE_VALUE"
+            echo "base_build=$BASE_BUILD"
             echo "base_sha=$BASE_SHA"
             echo "base_label=$BASE_LABEL"
             echo "head_source=$HEAD_SOURCE"
             echo "head_value=$HEAD_VALUE"
+            echo "head_build=$HEAD_BUILD"
             echo "head_sha=$HEAD_SHA"
             echo "head_label=$HEAD_LABEL"
             echo "needs_download=$NEEDS_DOWNLOAD"
@@ -166,19 +195,35 @@ jobs:
       - name: Prepare comparison trees
         run: |
           set -euo pipefail
+          INCLUDE_BETA="${{ github.event.inputs.include_beta || 'true' }}"
+          echo "Include beta releases for fallback downloads: ${INCLUDE_BETA}"
 
           download_and_extract_version() {
             local side="$1"
             local version="$2"
+            local build="$3"
+            local include_beta="$4"
 
             local side_root="/tmp/${side}-bundles"
             local ipsw_dir="/tmp/${side}-ipsw"
             local extract_dir="/tmp/${side}-extract"
+            local beta_flag=()
+
+            if [ "$include_beta" = "true" ]; then
+              beta_flag=(--beta)
+            fi
 
             rm -rf "$side_root" "$ipsw_dir" "$extract_dir"
             mkdir -p "$side_root" "$ipsw_dir" "$extract_dir"
 
-            ipsw download ipsw --device "${DEVICE}" --version "$version" --confirm --no-color --output "$ipsw_dir"
+            if [ -n "$build" ]; then
+              ipsw download ipsw --device "${DEVICE}" --build "$build" "${beta_flag[@]}" --confirm --no-color --output "$ipsw_dir"
+            elif [ -n "$version" ]; then
+              ipsw download ipsw --device "${DEVICE}" --version "$version" "${beta_flag[@]}" --confirm --no-color --output "$ipsw_dir"
+            else
+              echo "::error::Missing both version and build for ${side} download target"
+              exit 1
+            fi
             ipsw extract --files --pattern '.*Bundles.*iPhone.*\.bundle.*$' --output "$extract_dir" "$ipsw_dir"/*.ipsw
 
             sudo chown -R "$USER" "$extract_dir"/*/root
@@ -199,13 +244,13 @@ jobs:
           if [ "${{ steps.refs.outputs.base_source }}" = "git" ]; then
             git worktree add --detach /tmp/base-bundles "${{ steps.refs.outputs.base_sha }}"
           else
-            download_and_extract_version base "${{ steps.refs.outputs.base_value }}"
+            download_and_extract_version base "${{ steps.refs.outputs.base_value }}" "${{ steps.refs.outputs.base_build }}" "${INCLUDE_BETA}"
           fi
 
           if [ "${{ steps.refs.outputs.head_source }}" = "git" ]; then
             git worktree add --detach /tmp/head-bundles "${{ steps.refs.outputs.head_sha }}"
           else
-            download_and_extract_version head "${{ steps.refs.outputs.head_value }}"
+            download_and_extract_version head "${{ steps.refs.outputs.head_value }}" "${{ steps.refs.outputs.head_build }}" "${INCLUDE_BETA}"
           fi
 
       - name: Build carrier bundle diff report

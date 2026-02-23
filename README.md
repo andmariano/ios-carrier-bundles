@@ -40,9 +40,13 @@ Use `Carrier Bundle Change Alerts` with `Run workflow` and set:
 
 - `base_version`: iOS version for base snapshot (example: `26.0`)
 - `head_version`: iOS version for head snapshot (example: `26.3`)
+- `base_build`: optional base build for exact beta/RC targeting (example: `23E5222f`)
+- `head_build`: optional head build for exact beta/RC targeting (example: `23E5230a`)
+- `include_beta`: defaults to `true` (set `false` for stable-only lookup)
 - Optional fallback: `base_ref` / `head_ref` for git refs or commit SHAs
 
-When `base_version`/`head_version` are set, they take priority.
+When `base_build`/`head_build` are set, build targeting takes priority for download lookup.
+When `base_version`/`head_version` are set, they take priority over refs.
 If version inputs are empty, `base_ref`/`head_ref` are used.
 If a ref is not found, the workflow automatically treats that value as an iOS version and downloads it for comparison.
 
@@ -63,9 +67,10 @@ Yes, this can run fully on GitHub (no n8n required):
 
 Each time the report workflow runs on a bundle update, it opens a new issue with:
 
-- A human-readable markdown change report
-- The full raw JSON report in a collapsible section
-- Commit and workflow run links for traceability
+- Detailed value-level diffs for `Country Bundles/Portugal.bundle`
+- Detailed value-level diffs for `Carrier Bundles/*_pt.bundle`
+- Grouped `## Newly Detected Plist Keys` (`key_path` only)
+- A `## Full report artifact` section with links to full files
 
 ## Folder Explanations
 
