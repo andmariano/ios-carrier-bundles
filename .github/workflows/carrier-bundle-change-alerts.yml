@@ -143,15 +143,23 @@ jobs:
           rm -rf /tmp/apfs-fuse
 
           DEB_ARCH="amd64"
-          IPSW_DEB_URL=$(curl -s https://api.github.com/repos/blacktop/ipsw/releases/latest | \
-          jq -r --arg deb_arch "${DEB_ARCH}.deb" '(.assets[].browser_download_url | select(. | contains($deb_arch)) | select(. | contains("ipsw_")))')
+          case "$DEB_ARCH" in
+            amd64) DEB_ASSET_ARCH="x86_64" ;;
+            arm64) DEB_ASSET_ARCH="arm64" ;;
+            *) DEB_ASSET_ARCH="$DEB_ARCH" ;;
+          esac
+
+          IPSW_DEB_URL=$(curl -fsSL https://api.github.com/repos/blacktop/ipsw/releases/latest | \
+          jq -r --arg arch "$DEB_ASSET_ARCH" '[.assets[].browser_download_url | select(test("/ipsw_[^/]*_linux_" + $arch + "\\.deb$"))] | first // empty')
 
           if [ -z "$IPSW_DEB_URL" ]; then
-            echo "::error::Failed to resolve ipsw .deb URL for architecture ${DEB_ARCH}."
+            echo "::error::Failed to resolve ipsw .deb URL for architecture ${DEB_ARCH} (asset arch ${DEB_ASSET_ARCH})."
             exit 1
           fi
 
-          curl -sL -o /tmp/ipsw.deb "$IPSW_DEB_URL"
+          echo "Resolved ipsw .deb URL: $IPSW_DEB_URL"
+
+          curl -fsSL -o /tmp/ipsw.deb "$IPSW_DEB_URL"
           sudo dpkg -i /tmp/ipsw.deb
           rm /tmp/ipsw.deb
 
