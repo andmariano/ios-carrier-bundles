@@ -31,8 +31,20 @@ The GitHub Actions workflow supports a manual `device` input when you run `Updat
 
 This repo includes two GitHub Actions workflows for automation:
 
-- `Update Carrier Bundles`: runs every 6 hours and can also be run manually
+- `Update Carrier Bundles`: checks every 6 hours (and manually) and only downloads/extracts when a new iOS build is detected
 - `Carrier Bundle Change Alerts`: runs on bundle updates, generates a diff report, and opens a GitHub issue
+
+### Custom Compare (example: iOS 26.0 → 26.3)
+
+Use `Carrier Bundle Change Alerts` with `Run workflow` and set:
+
+- `base_version`: iOS version for base snapshot (example: `26.0`)
+- `head_version`: iOS version for head snapshot (example: `26.3`)
+- Optional fallback: `base_ref` / `head_ref` for git refs or commit SHAs
+
+When `base_version`/`head_version` are set, they take priority.
+If version inputs are empty, `base_ref`/`head_ref` are used.
+If a ref is not found, the workflow automatically treats that value as an iOS version and downloads it for comparison.
 
 ### What Gets Reported
 
@@ -42,13 +54,12 @@ This repo includes two GitHub Actions workflows for automation:
 - Dedicated alert when `Country Bundles/Portugal.bundle` changes
 - Dedicated alert when any carrier bundle matching `Carrier Bundles/*_pt.bundle` changes
 
-### Private Repo + Email Notifications
+### Email Notifications
 
 Yes, this can run fully on GitHub (no n8n required):
 
-1. Set the repository visibility to private in GitHub Settings.
-2. In your GitHub notification settings, enable email notifications.
-3. Watch this repository and include `Issues` in custom watch settings.
+1. In your GitHub notification settings, enable email notifications.
+2. Watch this repository and include `Issues` in custom watch settings.
 
 Each time the report workflow runs on a bundle update, it opens a new issue with:
 

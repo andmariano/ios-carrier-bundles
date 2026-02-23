@@ -13,12 +13,61 @@ env:
 
 jobs:
   ipsw-extraction:
-    name: Get Latest iOS IPSW and Extract Carrier Bundles
+    name: Check Latest iOS Build and Update Carrier Bundles
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install blacktop/ipsw
+        run: |
+          DEB_ARCH="arm64"
+
+          IPSW_DEB_URL=$(curl -s https://api.github.com/repos/blacktop/ipsw/releases/latest | \
+          jq -r '(.assets[].browser_download_url | select(. | contains('"$DEB_ARCH.deb"')) | select(. | contains("ipsw_")))')
+
+          curl -sL -o /tmp/ipsw.deb $IPSW_DEB_URL
+          sudo dpkg -i /tmp/ipsw.deb
+          rm /tmp/ipsw.deb
+
+      - name: Check if new iOS build is available
+        id: check_build
+        run: |
+          if [ -z "${DEVICE}" ]; then
+            echo "::error::DEVICE is not set. Provide workflow input 'device'."
+            exit 1
+          fi
+
+          CURRENT_BUILD=$(jq -r '.build // empty' ipsw_metadata.json 2>/dev/null || true)
+          LATEST_BUILD=$(ipsw download ipsw --device "${DEVICE}" --show-latest-build --no-color | tr -d '\r' | tail -n1 | xargs)
+          LATEST_VERSION=$(ipsw download ipsw --device "${DEVICE}" --show-latest-version --no-color | tr -d '\r' | tail -n1 | xargs)
+
+          if [ -z "${LATEST_BUILD}" ]; then
+            echo "::error::Failed to resolve latest iOS build for device ${DEVICE}."
+            exit 1
+          fi
+
+          if [ -n "${CURRENT_BUILD}" ] && [ "${CURRENT_BUILD}" = "${LATEST_BUILD}" ]; then
+            SHOULD_UPDATE="false"
+          else
+            SHOULD_UPDATE="true"
+          fi
+
+          echo "current_build=${CURRENT_BUILD}" >> "$GITHUB_OUTPUT"
+          echo "latest_build=${LATEST_BUILD}" >> "$GITHUB_OUTPUT"
+          echo "latest_version=${LATEST_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "should_update=${SHOULD_UPDATE}" >> "$GITHUB_OUTPUT"
+
+          echo "Current build: ${CURRENT_BUILD:-none}"
+          echo "Latest build: ${LATEST_BUILD}"
+          echo "Latest version: ${LATEST_VERSION}"
+          echo "Should update: ${SHOULD_UPDATE}"
+
+      - name: No new iOS build detected
+        if: steps.check_build.outputs.should_update == 'false'
+        run: echo "No new build for ${DEVICE} (still ${{ steps.check_build.outputs.current_build }}); skipping download/extraction."
+
       - name: Install Build Dependencies
+        if: steps.check_build.outputs.should_update == 'true'
         run: |
           BUILD_DEPS='fuse3 unzip lzma libfuse3-dev bzip2 libbz2-dev libz-dev cmake build-essential git libattr1-dev'
 
@@ -26,9 +75,11 @@ jobs:
           sudo apt install $BUILD_DEPS -y
       
       - name: Load FUSE Kernel Module
+        if: steps.check_build.outputs.should_update == 'true'
         run: sudo modprobe fuse
 
       - name: Install sgan81/apfs-fuse
+        if: steps.check_build.outputs.should_update == 'true'
         run: |
           git clone https://github.com/sgan81/apfs-fuse.git /tmp/apfs-fuse
           cd /tmp/apfs-fuse
@@ -42,18 +93,8 @@ jobs:
           cd ${GITHUB_WORKSPACE}
           rm -rf /tmp/apfs-fuse
       
-      - name: Install blacktop/ipsw
-        run: |
-          DEB_ARCH="arm64"
-
-          IPSW_DEB_URL=$(curl -s https://api.github.com/repos/blacktop/ipsw/releases/latest | \
-          jq -r '(.assets[].browser_download_url | select(. | contains('\"$DEB_ARCH.deb\"')) | select(. | contains("ipsw_")))')
-
-          curl -sL -o /tmp/ipsw.deb $IPSW_DEB_URL
-          sudo dpkg -i /tmp/ipsw.deb
-          rm /tmp/ipsw.deb
-      
       - name: Download Latest IPSW File
+        if: steps.check_build.outputs.should_update == 'true'
         run: |
           if [ -z "${DEVICE}" ]; then
             echo "::error::Repository variable DEVICE is not set. Set it to a valid device identifier (for example: iPhone15,2)."
@@ -65,12 +106,14 @@ jobs:
           ipsw download ipsw --device "${DEVICE}" --latest --no-color --output "${RUNNER_TEMP}/ipsw"
       
       - name: Extract Carrier Bundles From IPSW
+        if: steps.check_build.outputs.should_update == 'true'
         run: |
           mkdir -p /tmp/ipsw
           cd /tmp/ipsw
           ipsw extract --files --pattern '.*Bundles.*iPhone.*\.bundle.*$' --output /tmp/ipsw "${RUNNER_TEMP}"/ipsw/*.ipsw
 
       - name: Clean Up and Move Carrier Bundles to Repo
+        if: steps.check_build.outputs.should_update == 'true'
         run: |
           rm -rf ${GITHUB_WORKSPACE}/Country\ Bundles
           rm -rf ${GITHUB_WORKSPACE}/Carrier\ Bundles
@@ -83,6 +126,7 @@ jobs:
           mv /tmp/ipsw/*/root/System/Library/Carrier\ Bundles/iPhone/* ${GITHUB_WORKSPACE}/Carrier\ Bundles
 
       - name: Update Metadata
+        if: steps.check_build.outputs.should_update == 'true'
         run: |
           cd ${GITHUB_WORKSPACE}
 
@@ -107,6 +151,7 @@ jobs:
           sed -i "s/(DEVICE_PRODNAME)/$DEVICE_PRODNAME/g" README.md
           
       - name: Commit Changes
+        if: steps.check_build.outputs.should_update == 'true'
         run: |
           cd ${GITHUB_WORKSPACE}
 

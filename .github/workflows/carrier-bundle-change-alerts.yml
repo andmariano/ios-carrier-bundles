@@ -9,10 +9,29 @@ on:
       - 'ipsw_metadata.json'
   workflow_dispatch:
     inputs:
-      base_ref:
-        description: "Optional base commit/ref to compare against (defaults to previous commit)"
+      base_version:
+        description: "Base iOS version (preferred for custom version compare, example: 26.0)"
         required: false
         default: ""
+      head_version:
+        description: "Head iOS version (preferred for custom version compare, example: 26.3)"
+        required: false
+        default: ""
+      base_ref:
+        description: "Base git ref/commit fallback (example: ios-26.0 or commit SHA)"
+        required: false
+        default: ""
+      head_ref:
+        description: "Head git ref/commit fallback (example: ios-26.3 or commit SHA)"
+        required: false
+        default: ""
+      device:
+        description: "Device identifier used when version download fallback is needed"
+        required: false
+        default: iPhone18,3
+
+env:
+  DEVICE: ${{ github.event.inputs.device || 'iPhone18,3' }}
 
 jobs:
   generate-report:
@@ -26,30 +45,161 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve base commit
-        id: base
+      - name: Resolve compare inputs
+        id: refs
         run: |
-          if [ -n "${{ github.event.inputs.base_ref }}" ]; then
-            BASE_SHA=$(git rev-parse "${{ github.event.inputs.base_ref }}")
-          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
-            BASE_SHA="${{ github.event.before }}"
+          resolve_input() {
+            local raw_input="$1"
+            local fallback_git_sha="$2"
+            local source=""
+            local value=""
+            local sha=""
+            local label=""
+
+            if [ -n "$raw_input" ]; then
+              if git rev-parse --verify --quiet "${raw_input}^{commit}" >/dev/null; then
+                source="git"
+                sha=$(git rev-parse "${raw_input}^{commit}")
+                value="$sha"
+                label="git:${raw_input} (${sha})"
+              else
+                source="version"
+                value="$raw_input"
+                label="version:${raw_input}"
+              fi
+            else
+              source="git"
+              sha="$fallback_git_sha"
+              value="$sha"
+              label="git:${sha}"
+            fi
+
+            echo "$source|$value|$sha|$label"
+          }
+
+          DEFAULT_HEAD_SHA="${GITHUB_SHA}"
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            DEFAULT_BASE_SHA="${{ github.event.before }}"
           else
-            BASE_SHA=$(git rev-parse HEAD^)
+            DEFAULT_BASE_SHA=$(git rev-parse "${DEFAULT_HEAD_SHA}^")
           fi
 
-          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
-          echo "Using base commit: $BASE_SHA"
+          BASE_INPUT="${{ github.event.inputs.base_version || github.event.inputs.base_ref }}"
+          HEAD_INPUT="${{ github.event.inputs.head_version || github.event.inputs.head_ref }}"
 
-      - name: Check out base tree
+          HEAD_RESULT=$(resolve_input "$HEAD_INPUT" "$DEFAULT_HEAD_SHA")
+          BASE_RESULT=$(resolve_input "$BASE_INPUT" "$DEFAULT_BASE_SHA")
+
+          HEAD_SOURCE=$(echo "$HEAD_RESULT" | cut -d'|' -f1)
+          HEAD_VALUE=$(echo "$HEAD_RESULT" | cut -d'|' -f2)
+          HEAD_SHA=$(echo "$HEAD_RESULT" | cut -d'|' -f3)
+          HEAD_LABEL=$(echo "$HEAD_RESULT" | cut -d'|' -f4-)
+
+          BASE_SOURCE=$(echo "$BASE_RESULT" | cut -d'|' -f1)
+          BASE_VALUE=$(echo "$BASE_RESULT" | cut -d'|' -f2)
+          BASE_SHA=$(echo "$BASE_RESULT" | cut -d'|' -f3)
+          BASE_LABEL=$(echo "$BASE_RESULT" | cut -d'|' -f4-)
+
+          NEEDS_DOWNLOAD="false"
+          if [ "$BASE_SOURCE" = "version" ] || [ "$HEAD_SOURCE" = "version" ]; then
+            NEEDS_DOWNLOAD="true"
+          fi
+
+          {
+            echo "base_source=$BASE_SOURCE"
+            echo "base_value=$BASE_VALUE"
+            echo "base_sha=$BASE_SHA"
+            echo "base_label=$BASE_LABEL"
+            echo "head_source=$HEAD_SOURCE"
+            echo "head_value=$HEAD_VALUE"
+            echo "head_sha=$HEAD_SHA"
+            echo "head_label=$HEAD_LABEL"
+            echo "needs_download=$NEEDS_DOWNLOAD"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Base compare target: $BASE_LABEL"
+          echo "Head compare target: $HEAD_LABEL"
+          echo "Needs download fallback: $NEEDS_DOWNLOAD"
+
+      - name: Install download/extract dependencies (fallback mode)
+        if: steps.refs.outputs.needs_download == 'true'
         run: |
-          rm -rf /tmp/previous-bundles
-          git worktree add --detach /tmp/previous-bundles "${{ steps.base.outputs.base_sha }}"
+          BUILD_DEPS='fuse3 unzip lzma libfuse3-dev bzip2 libbz2-dev libz-dev cmake build-essential git libattr1-dev'
+
+          sudo apt update
+          sudo apt install $BUILD_DEPS -y
+          sudo modprobe fuse
+
+          git clone https://github.com/sgan81/apfs-fuse.git /tmp/apfs-fuse
+          cd /tmp/apfs-fuse
+          git submodule init
+          git submodule update
+          mkdir build
+          cd build
+          cmake ..
+          sudo make install
+
+          cd ${GITHUB_WORKSPACE}
+          rm -rf /tmp/apfs-fuse
+
+          DEB_ARCH="amd64"
+          IPSW_DEB_URL=$(curl -s https://api.github.com/repos/blacktop/ipsw/releases/latest | \
+          jq -r '(.assets[].browser_download_url | select(. | contains('"$DEB_ARCH.deb"')) | select(. | contains("ipsw_")))')
+
+          curl -sL -o /tmp/ipsw.deb $IPSW_DEB_URL
+          sudo dpkg -i /tmp/ipsw.deb
+          rm /tmp/ipsw.deb
+
+      - name: Prepare comparison trees
+        run: |
+          set -euo pipefail
+
+          download_and_extract_version() {
+            local side="$1"
+            local version="$2"
+
+            local side_root="/tmp/${side}-bundles"
+            local ipsw_dir="/tmp/${side}-ipsw"
+            local extract_dir="/tmp/${side}-extract"
+
+            rm -rf "$side_root" "$ipsw_dir" "$extract_dir"
+            mkdir -p "$side_root" "$ipsw_dir" "$extract_dir"
+
+            ipsw download ipsw --device "${DEVICE}" --version "$version" --confirm --no-color --output "$ipsw_dir"
+            ipsw extract --files --pattern '.*Bundles.*iPhone.*\.bundle.*$' --output "$extract_dir" "$ipsw_dir"/*.ipsw
+
+            sudo chown -R "$USER" "$extract_dir"/*/root
+
+            mkdir -p "$side_root/Carrier Bundles" "$side_root/Country Bundles"
+            cp -R "$extract_dir"/*/root/System/Library/Carrier\ Bundles/iPhone/* "$side_root/Carrier Bundles"/
+
+            if compgen -G "$extract_dir/*/root/System/Library/CountryBundles/iPhone/*" > /dev/null; then
+              cp -R "$extract_dir"/*/root/System/Library/CountryBundles/iPhone/* "$side_root/Country Bundles"/
+            fi
+
+            IPSW_INFO=$(ipsw info "$ipsw_dir"/*.ipsw --json --no-color)
+            echo "$IPSW_INFO" > "$side_root/ipsw_metadata.json"
+          }
+
+          rm -rf /tmp/base-bundles /tmp/head-bundles
+
+          if [ "${{ steps.refs.outputs.base_source }}" = "git" ]; then
+            git worktree add --detach /tmp/base-bundles "${{ steps.refs.outputs.base_sha }}"
+          else
+            download_and_extract_version base "${{ steps.refs.outputs.base_value }}"
+          fi
+
+          if [ "${{ steps.refs.outputs.head_source }}" = "git" ]; then
+            git worktree add --detach /tmp/head-bundles "${{ steps.refs.outputs.head_sha }}"
+          else
+            download_and_extract_version head "${{ steps.refs.outputs.head_value }}"
+          fi
 
       - name: Build carrier bundle diff report
         run: |
           python3 scripts/cb_change_report.py \
-            --old-dir "/tmp/previous-bundles/Carrier Bundles" \
-            --new-dir "${GITHUB_WORKSPACE}/Carrier Bundles" \
+            --old-dir "/tmp/base-bundles/Carrier Bundles" \
+            --new-dir "/tmp/head-bundles/Carrier Bundles" \
             --output-json "${GITHUB_WORKSPACE}/reports/cb-change-report.json" \
             --output-md "${GITHUB_WORKSPACE}/reports/cb-change-report.md"
 
@@ -64,20 +214,43 @@ jobs:
         run: |
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-          IOS_VERSION=$(jq -r '.version // "unknown"' ipsw_metadata.json)
-          IOS_BUILD=$(jq -r '.build // "unknown"' ipsw_metadata.json)
+          IOS_VERSION=$(jq -r '.version // "unknown"' /tmp/head-bundles/ipsw_metadata.json 2>/dev/null || echo "unknown")
+          IOS_BUILD=$(jq -r '.build // "unknown"' /tmp/head-bundles/ipsw_metadata.json 2>/dev/null || echo "unknown")
 
           PORTUGAL_CHANGED="false"
           PT_CARRIER_CHANGED="false"
           TITLE_PREFIX=""
 
-          git diff --name-only "${{ steps.base.outputs.base_sha }}" "${GITHUB_SHA}" -- "Country Bundles/Portugal.bundle/**" > /tmp/portugal_changes.txt
+          PORTUGAL_BASE="/tmp/base-bundles/Country Bundles/Portugal.bundle"
+          PORTUGAL_HEAD="/tmp/head-bundles/Country Bundles/Portugal.bundle"
+          if [ -d "$PORTUGAL_BASE" ] || [ -d "$PORTUGAL_HEAD" ]; then
+            diff -rq "$PORTUGAL_BASE" "$PORTUGAL_HEAD" > /tmp/portugal_changes.txt || true
+          else
+            : > /tmp/portugal_changes.txt
+          fi
+
           if [ -s /tmp/portugal_changes.txt ]; then
             PORTUGAL_CHANGED="true"
             TITLE_PREFIX="${TITLE_PREFIX}[Portugal Country Bundle Changed] "
           fi
 
-          git diff --name-only "${{ steps.base.outputs.base_sha }}" "${GITHUB_SHA}" -- "Carrier Bundles/*_pt.bundle/**" > /tmp/pt_carrier_bundle_changes.txt
+          : > /tmp/pt_carrier_bundle_changes.txt
+          PT_BUNDLE_LIST=$( {
+            find "/tmp/base-bundles/Carrier Bundles" -mindepth 1 -maxdepth 1 -type d -name '*_pt.bundle' -printf '%f\n' 2>/dev/null || true
+            find "/tmp/head-bundles/Carrier Bundles" -mindepth 1 -maxdepth 1 -type d -name '*_pt.bundle' -printf '%f\n' 2>/dev/null || true
+          } | sort -u )
+
+          while IFS= read -r bundle_name; do
+            [ -z "$bundle_name" ] && continue
+
+            BASE_DIR="/tmp/base-bundles/Carrier Bundles/${bundle_name}"
+            HEAD_DIR="/tmp/head-bundles/Carrier Bundles/${bundle_name}"
+
+            if [ -d "$BASE_DIR" ] || [ -d "$HEAD_DIR" ]; then
+              diff -rq "$BASE_DIR" "$HEAD_DIR" 2>/dev/null | sed "s#^#${bundle_name}: #" >> /tmp/pt_carrier_bundle_changes.txt || true
+            fi
+          done <<< "$PT_BUNDLE_LIST"
+
           if [ -s /tmp/pt_carrier_bundle_changes.txt ]; then
             PT_CARRIER_CHANGED="true"
             TITLE_PREFIX="${TITLE_PREFIX}[_pt Carrier Bundles Changed] "
@@ -92,6 +265,8 @@ jobs:
             echo "portugal_changes_file=/tmp/portugal_changes.txt"
             echo "pt_carrier_changed=${PT_CARRIER_CHANGED}"
             echo "pt_carrier_changes_file=/tmp/pt_carrier_bundle_changes.txt"
+            echo "compare_base=${{ steps.refs.outputs.base_label }}"
+            echo "compare_head=${{ steps.refs.outputs.head_label }}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub issue with report
@@ -104,7 +279,8 @@ jobs:
           PT_CARRIER_CHANGED: ${{ steps.issue_data.outputs.pt_carrier_changed }}
           PT_CARRIER_CHANGES_FILE: ${{ steps.issue_data.outputs.pt_carrier_changes_file }}
           RUN_URL: ${{ steps.issue_data.outputs.run_url }}
-          BASE_SHA: ${{ steps.base.outputs.base_sha }}
+          COMPARE_BASE: ${{ steps.issue_data.outputs.compare_base }}
+          COMPARE_HEAD: ${{ steps.issue_data.outputs.compare_head }}
           ISSUE_TITLE: ${{ steps.issue_data.outputs.title }}
         with:
           script: |
@@ -158,10 +334,10 @@ jobs:
                 ].join('\n');
 
             const body = [
-              `Automated carrier bundle report for commit ${context.sha}.`,
+              `Automated carrier bundle report.`,
               '',
-              `- Base commit: ${process.env.BASE_SHA}`,
-              `- Head commit: ${context.sha}`,
+              `- Compare base: ${process.env.COMPARE_BASE}`,
+              `- Compare head: ${process.env.COMPARE_HEAD}`,
               `- Workflow run: ${process.env.RUN_URL}`,
               '',
               portugalSection,
@@ -187,4 +363,6 @@ jobs:
       - name: Clean up worktree
         if: always()
         run: |
-          git worktree remove /tmp/previous-bundles --force || true
+          git worktree remove /tmp/base-bundles --force || true
+          git worktree remove /tmp/head-bundles --force || true
+          rm -rf /tmp/base-ipsw /tmp/head-ipsw /tmp/base-extract /tmp/head-extract
