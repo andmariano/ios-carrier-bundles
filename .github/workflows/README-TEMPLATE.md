@@ -21,11 +21,12 @@ This repo contains the Carrier Bundles currently bundled with iOS version (IOS_V
 
 ## Workflow Device Selection
 
-The GitHub Actions workflow supports a manual `device` input when you run `Update Carrier Bundles`.
+The GitHub Actions workflow supports manual inputs when you run `Update Carrier Bundles`.
 
 - Default device: iPhone 17 Pro Max (`iPhone18,3`)
 - Override: Actions → `Update Carrier Bundles` → `Run workflow` → set `device`
 - If no input is provided, workflow uses the default `iPhone18,3`
+- `include_beta` defaults to `true` (set `false` for stable-only latest build checks)
 
 ## Automation + Alerts
 

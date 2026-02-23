@@ -6,10 +6,15 @@ on:
         description: "iOS device identifier (for example: iPhone18,3 for iPhone 17 Pro Max)"
         required: false
         default: iPhone18,3
+      include_beta:
+        description: "Include beta/RC releases when checking and downloading latest IPSW"
+        required: false
+        default: "true"
   schedule:
     - cron: '17 */6 * * *'
 env:
   DEVICE: ${{ github.event.inputs.device || 'iPhone18,3' }}
+  INCLUDE_BETA: ${{ github.event.inputs.include_beta || 'true' }}
 
 jobs:
   ipsw-extraction:
@@ -49,9 +54,14 @@ jobs:
             exit 1
           fi
 
+          BETA_FLAG=()
+          if [ "${INCLUDE_BETA}" = "true" ]; then
+            BETA_FLAG=(--beta)
+          fi
+
           CURRENT_BUILD=$(jq -r '.build // empty' ipsw_metadata.json 2>/dev/null || true)
-          LATEST_BUILD=$(ipsw download ipsw --device "${DEVICE}" --show-latest-build --no-color | tr -d '\r' | tail -n1 | xargs)
-          LATEST_VERSION=$(ipsw download ipsw --device "${DEVICE}" --show-latest-version --no-color | tr -d '\r' | tail -n1 | xargs)
+          LATEST_BUILD=$(ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --show-latest-build --no-color | tr -d '\r' | tail -n1 | xargs)
+          LATEST_VERSION=$(ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --show-latest-version --no-color | tr -d '\r' | tail -n1 | xargs)
 
           if [ -z "${LATEST_BUILD}" ]; then
             echo "::error::Failed to resolve latest iOS build for device ${DEVICE}."
@@ -72,6 +82,7 @@ jobs:
           echo "Current build: ${CURRENT_BUILD:-none}"
           echo "Latest build: ${LATEST_BUILD}"
           echo "Latest version: ${LATEST_VERSION}"
+          echo "Include beta: ${INCLUDE_BETA}"
           echo "Should update: ${SHOULD_UPDATE}"
 
       - name: No new iOS build detected
@@ -113,9 +124,14 @@ jobs:
             exit 1
           fi
 
+          BETA_FLAG=()
+          if [ "${INCLUDE_BETA}" = "true" ]; then
+            BETA_FLAG=(--beta)
+          fi
+
           mkdir -p "${RUNNER_TEMP}/ipsw"
           cd "${RUNNER_TEMP}/ipsw"
-          ipsw download ipsw --device "${DEVICE}" --latest --no-color --output "${RUNNER_TEMP}/ipsw"
+          ipsw download ipsw --device "${DEVICE}" "${BETA_FLAG[@]}" --latest --no-color --output "${RUNNER_TEMP}/ipsw"
       
       - name: Extract Carrier Bundles From IPSW
         if: steps.check_build.outputs.should_update == 'true'
