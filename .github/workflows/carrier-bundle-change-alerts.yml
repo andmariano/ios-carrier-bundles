@@ -144,9 +144,14 @@ jobs:
 
           DEB_ARCH="amd64"
           IPSW_DEB_URL=$(curl -s https://api.github.com/repos/blacktop/ipsw/releases/latest | \
-          jq -r '(.assets[].browser_download_url | select(. | contains('"$DEB_ARCH.deb"')) | select(. | contains("ipsw_")))')
+          jq -r --arg deb_arch "${DEB_ARCH}.deb" '(.assets[].browser_download_url | select(. | contains($deb_arch)) | select(. | contains("ipsw_")))')
 
-          curl -sL -o /tmp/ipsw.deb $IPSW_DEB_URL
+          if [ -z "$IPSW_DEB_URL" ]; then
+            echo "::error::Failed to resolve ipsw .deb URL for architecture ${DEB_ARCH}."
+            exit 1
+          fi
+
+          curl -sL -o /tmp/ipsw.deb "$IPSW_DEB_URL"
           sudo dpkg -i /tmp/ipsw.deb
           rm /tmp/ipsw.deb
 
