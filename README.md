@@ -19,6 +19,14 @@ This repo contains the Carrier Bundles currently bundled with iOS version 26.3 f
 | :-------- | :------- |
 | iPhone Air | iPhone18,4 |
 
+## Workflow Device Selection
+
+The GitHub Actions workflow supports a manual `device` input when you run `Update Carrier Bundles`.
+
+- Default device: iPhone 17 Pro Max (`iPhone18,3`)
+- Override: Actions → `Update Carrier Bundles` → `Run workflow` → set `device`
+- Fallback: if no input is provided, the workflow uses repository variable `DEVICE`
+
 ## Folder Explanations
 
 #### Carrier Bundles

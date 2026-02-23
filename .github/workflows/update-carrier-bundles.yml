@@ -1,7 +1,13 @@
 name: Update Carrier Bundles
-on: [workflow_dispatch]
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: "iOS device identifier (for example: iPhone18,3 for iPhone 17 Pro Max)"
+        required: false
+        default: iPhone18,3
 env:
-  DEVICE: ${{ vars.DEVICE }}
+  DEVICE: ${{ github.event.inputs.device || vars.DEVICE }}
 
 jobs:
   ipsw-extraction:
@@ -47,15 +53,20 @@ jobs:
       
       - name: Download Latest IPSW File
         run: |
-          mkdir -p /${RUNNER_TEMP}/ipsw
-          cd /${RUNNER_TEMP}/ipsw
-          ipsw download ipsw --device $DEVICE --latest --no-color --output /${RUNNER_TEMP}/ipsw
+          if [ -z "${DEVICE}" ]; then
+            echo "::error::Repository variable DEVICE is not set. Set it to a valid device identifier (for example: iPhone15,2)."
+            exit 1
+          fi
+
+          mkdir -p "${RUNNER_TEMP}/ipsw"
+          cd "${RUNNER_TEMP}/ipsw"
+          ipsw download ipsw --device "${DEVICE}" --latest --no-color --output "${RUNNER_TEMP}/ipsw"
       
       - name: Extract Carrier Bundles From IPSW
         run: |
           mkdir -p /tmp/ipsw
           cd /tmp/ipsw
-          ipsw extract --files --pattern '.*Bundles.*iPhone.*\.bundle.*$' --output /tmp/ipsw /${RUNNER_TEMP}/ipsw/*.ipsw
+          ipsw extract --files --pattern '.*Bundles.*iPhone.*\.bundle.*$' --output /tmp/ipsw "${RUNNER_TEMP}"/ipsw/*.ipsw
 
       - name: Clean Up and Move Carrier Bundles to Repo
         run: |
@@ -76,7 +87,7 @@ jobs:
           rm README.md
           cp .github/workflows/README-TEMPLATE.md README.md
 
-          IPSW_INFO=$(ipsw info /${RUNNER_TEMP}/ipsw/*.ipsw --json --no-color)
+          IPSW_INFO=$(ipsw info "${RUNNER_TEMP}"/ipsw/*.ipsw --json --no-color)
           echo $IPSW_INFO > ipsw_metadata.json
           
           CURRENT_DATE=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
