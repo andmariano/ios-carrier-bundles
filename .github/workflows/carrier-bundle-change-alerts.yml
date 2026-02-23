@@ -317,6 +317,7 @@ jobs:
             const ISSUE_BODY_TARGET_CHARS = 65000;
 
             const reportJson = fs.readFileSync(process.env.REPORT_JSON_PATH, 'utf8');
+            const report = JSON.parse(reportJson);
             const portugalChanged = process.env.PORTUGAL_CHANGED === 'true';
             const portugalChanges = fs.existsSync(process.env.PORTUGAL_CHANGES_FILE)
               ? fs.readFileSync(process.env.PORTUGAL_CHANGES_FILE, 'utf8').trim()
@@ -376,23 +377,76 @@ jobs:
               `- Compare base: ${process.env.COMPARE_BASE}`,
               `- Compare head: ${process.env.COMPARE_HEAD}`,
               `- Workflow run: ${process.env.RUN_URL}`,
-              `- Full report artifact: ${process.env.RUN_URL}#artifacts`,
               '',
               portugalSection,
               ptCarrierSection
             ].join('\n');
 
-            const jsonOpen = ['<details><summary>Raw JSON report</summary>', '', '```json'].join('\n');
-            const jsonClose = ['```', '', '</details>'].join('\n');
-            const reservedChars = preamble.length + jsonOpen.length + jsonClose.length + 2;
-            const jsonBudget = Math.max(0, ISSUE_BODY_TARGET_CHARS - reservedChars);
-            const truncatedReportJson = truncateForBlock(reportJson, jsonBudget);
+            const fullArtifactSection = [
+              '## Full report artifact',
+              '',
+              `- Open artifacts: ${process.env.RUN_URL}#artifacts`,
+              '- Included files:',
+              '  - `reports/cb-change-report.json`',
+              '  - `reports/cb-change-report.md`',
+              '  - `reports/portugal-bundle-diff.txt`',
+              '  - `reports/pt-carrier-bundles-diff.txt`',
+              ''
+            ].join('\n');
+
+            const rawNewTags = Array.isArray(report.new_tags) ? report.new_tags : [];
+            const newKeyPaths = rawNewTags
+              .map(item => {
+                if (typeof item === 'string') return item;
+                if (item && typeof item === 'object' && typeof item.key_path === 'string') return item.key_path;
+                return null;
+              })
+              .filter(Boolean);
+
+            function keyPrefix(keyPath) {
+              if (typeof keyPath !== 'string' || keyPath.length === 0) return 'Other';
+              const dotIdx = keyPath.indexOf('.');
+              const listIdx = keyPath.indexOf('[]');
+              const splitIdx = [dotIdx, listIdx].filter(idx => idx >= 0).sort((a, b) => a - b)[0];
+              if (splitIdx === undefined) return keyPath;
+              return keyPath.slice(0, splitIdx) || keyPath;
+            }
+
+            let keyLines = ['- None detected.'];
+            if (newKeyPaths.length > 0) {
+              const grouped = new Map();
+              for (const keyPath of newKeyPaths) {
+                const prefix = keyPrefix(keyPath);
+                if (!grouped.has(prefix)) grouped.set(prefix, []);
+                grouped.get(prefix).push(keyPath);
+              }
+
+              const prefixes = Array.from(grouped.keys()).sort((a, b) => a.localeCompare(b));
+              const lines = [];
+              for (const prefix of prefixes) {
+                lines.push(`### ${prefix}`);
+                lines.push('');
+                const keysForPrefix = grouped.get(prefix).sort((a, b) => a.localeCompare(b));
+                for (const keyPath of keysForPrefix) {
+                  lines.push(`- ${keyPath}`);
+                }
+                lines.push('');
+              }
+              keyLines = lines;
+            }
+
+            const keysHeader = ['## Newly Detected Plist Keys', ''].join('\n');
+            const keysFooter = [''].join('\n');
+            const reservedChars = preamble.length + fullArtifactSection.length + keysHeader.length + keysFooter.length + 4;
+            const keysBudget = Math.max(0, ISSUE_BODY_TARGET_CHARS - reservedChars);
+            const truncatedKeys = truncateForBlock(keyLines.join('\n'), keysBudget);
 
             const body = [
               preamble,
-              jsonOpen,
-              truncatedReportJson,
-              jsonClose,
+              fullArtifactSection,
+              keysHeader,
+              truncatedKeys,
+              keysFooter,
             ].join('\n');
 
             let finalBody = body;
