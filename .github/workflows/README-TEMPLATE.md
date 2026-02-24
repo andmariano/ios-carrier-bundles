@@ -2,6 +2,8 @@
 # iOS (IOS_VERSION) Carrier Bundles
 
 This repo contains the Carrier Bundles currently bundled with iOS version (IOS_VERSION) for the (DEVICE_NAME).
+
+> **Compatibility Note:** This repository tracks carrier bundles starting with iOS 26. Carrier bundles from iOS 26+ may work on older iOS versions, but compatibility is not guaranteed and feature parity may vary.
 ## Last Extraction Metadata
 
 #### Last Extraction Time
@@ -32,8 +34,8 @@ The GitHub Actions workflow supports manual inputs when you run `Update Carrier 
 
 This repo includes two GitHub Actions workflows for automation:
 
-- `Update Carrier Bundles`: checks every 6 hours (and manually) and only downloads/extracts when a new iOS build is detected
-- `Carrier Bundle Change Alerts`: runs on bundle updates, generates a diff report, and opens a GitHub issue
+- `Update Carrier Bundles`: checks every 12 hours (and manually) and only downloads/extracts when a new iOS build is detected
+- `Carrier Bundle Change Alerts`: runs on bundle updates, generates a diff report, and opens a GitHub issue with machine-readable JSON for Portugal changes
 
 ### Custom Compare (example: iOS 26.0 → 26.3)
 
@@ -61,10 +63,35 @@ If a ref is not found, the workflow automatically treats that value as an iOS ve
 
 Each time the report workflow runs on a bundle update, it opens a new issue with:
 
+- **Quick Summary Table:** Visual overview of version changes for country and carrier bundles
+- **Machine-Readable JSON:** Parsable Portugal changes in JSON format (collapsible)
 - Detailed value-level diffs for `Country Bundles/Portugal.bundle`
 - Detailed value-level diffs for `Carrier Bundles/*_pt.bundle`
 - A flat `## Newly Detected Plist Keys` list (`key_path` only, deduplicated)
-- A `## Full report artifact` section with links to full files
+- A `## Full report artifact` section with links to full files including `portugal-changes.json`
+- **Labels:** Automatic issue tagging with `carrier-bundles`, `automated-report`, `portugal`, `pt-carriers`, `ios-{version}`, and `beta` (when applicable)
+
+### Machine-Readable Portugal Changes
+
+For automated processing of Portugal carrier bundle changes, the workflow generates `reports/portugal-changes.json` with structured data including:
+
+- iOS version and build information
+- Bundle types (country/carrier) with version changes
+- Bundle identifiers and names
+- Timestamp of report generation
+
+**Access methods:**
+1. **GitHub Issues:** JSON embedded in issue body (collapsible section)
+2. **Workflow Artifacts:** Download `carrier-bundle-change-report` artifact
+3. **Local Script:** Run `python3 scripts/generate_pt_changes.py` (see [scripts/README.md](scripts/README.md))
+
+**Example use cases:**
+- Automated monitoring systems
+- Version tracking databases
+- CI/CD integration for carrier testing
+- Historical change analysis
+
+See [scripts/README.md](scripts/README.md) for detailed usage and JSON schema.
 
 ## Folder Explanations
 

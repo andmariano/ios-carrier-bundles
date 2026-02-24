@@ -340,6 +340,14 @@ jobs:
           cp /tmp/portugal_changes.txt "${GITHUB_WORKSPACE}/reports/portugal-bundle-diff.txt"
           cp /tmp/pt_carrier_bundle_changes.txt "${GITHUB_WORKSPACE}/reports/pt-carrier-bundles-diff.txt"
 
+          # Generate Portugal changes JSON for machine-readable format
+          if [ "$PORTUGAL_CHANGED" = "true" ] || [ "$PT_CARRIER_CHANGED" = "true" ]; then
+            python3 "${GITHUB_WORKSPACE}/scripts/generate_pt_changes_ci.py" \
+              /tmp/base-bundles \
+              /tmp/head-bundles \
+              > "${GITHUB_WORKSPACE}/reports/portugal-changes.json" || echo '{}' > "${GITHUB_WORKSPACE}/reports/portugal-changes.json"
+          fi
+
           TITLE="${TITLE_PREFIX}New Carriers/Tags Report: iOS ${IOS_VERSION_LABEL} (${IOS_BUILD})"
 
           {
@@ -357,6 +365,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           REPORT_JSON_PATH: reports/cb-change-report.json
+          PT_JSON_PATH: reports/portugal-changes.json
           PORTUGAL_CHANGES_FILE: ${{ steps.issue_data.outputs.portugal_changes_file }}
           PORTUGAL_CHANGED: ${{ steps.issue_data.outputs.portugal_changed }}
           PT_CARRIER_CHANGED: ${{ steps.issue_data.outputs.pt_carrier_changed }}
@@ -381,6 +390,18 @@ jobs:
             const ptCarrierChanges = fs.existsSync(process.env.PT_CARRIER_CHANGES_FILE)
               ? fs.readFileSync(process.env.PT_CARRIER_CHANGES_FILE, 'utf8').trim()
               : '';
+            
+            // Load Portugal changes JSON
+            let ptJsonData = null;
+            let ptJsonText = '';
+            if (fs.existsSync(process.env.PT_JSON_PATH)) {
+              try {
+                ptJsonText = fs.readFileSync(process.env.PT_JSON_PATH, 'utf8');
+                ptJsonData = JSON.parse(ptJsonText);
+              } catch (e) {
+                // Ignore parse errors
+              }
+            }
 
             function truncateForBlock(content, maxChars) {
               if (!content || maxChars <= 0) return '';
@@ -392,60 +413,113 @@ jobs:
 
             const portugalSection = portugalChanged
               ? [
-                  '## Portugal Country Bundle Alert',
+                  '### 🌍 Portugal Country Bundle',
                   '',
-                  'Changes detected in `Country Bundles/Portugal.bundle`.',
+                  '✅ **Changes detected** in `Country Bundles/Portugal.bundle`',
                   '',
-                  '```text',
+                  '<details>',
+                  '<summary>View detailed changes</summary>',
+                  '',
+                  '```diff',
                   portugalChanges,
                   '```',
+                  '',
+                  '</details>',
                   ''
                 ].join('\n')
               : [
-                  '## Portugal Country Bundle Alert',
+                  '### 🌍 Portugal Country Bundle',
                   '',
-                  'No changes detected in `Country Bundles/Portugal.bundle` for this run.',
+                  '⚪ No changes detected',
                   ''
                 ].join('\n');
 
             const ptCarrierSection = ptCarrierChanged
               ? [
-                  '## _pt Carrier Bundles Alert',
+                  '### 📡 Portugal Carrier Bundles (_pt)',
                   '',
-                  'Changes detected in carrier bundles matching `Carrier Bundles/*_pt.bundle`.',
+                  '✅ **Changes detected** in carrier bundles matching `Carrier Bundles/*_pt.bundle`',
                   '',
-                  '```text',
+                  '<details>',
+                  '<summary>View detailed changes</summary>',
+                  '',
+                  '```diff',
                   ptCarrierChanges,
                   '```',
+                  '',
+                  '</details>',
                   ''
                 ].join('\n')
               : [
-                  '## _pt Carrier Bundles Alert',
+                  '### 📡 Portugal Carrier Bundles (_pt)',
                   '',
-                  'No changes detected in carrier bundles matching `Carrier Bundles/*_pt.bundle` for this run.',
+                  '⚪ No changes detected',
                   ''
                 ].join('\n');
 
+            // Add machine-readable JSON section if PT changes exist
+            let ptJsonSection = '';
+            let quickSummary = '';
+            if (ptJsonData && ptJsonData.bundles_changed && ptJsonData.bundles_changed.length > 0) {
+              // Build quick summary table
+              const summaryRows = ptJsonData.bundles_changed.map(bundle => {
+                const type = bundle.type === 'country' ? '🌍 Country' : '📡 Carrier';
+                const name = bundle.name;
+                const versionChange = `${bundle.version_old} → ${bundle.version_new}`;
+                return `| ${type} | ${name} | ${versionChange} |`;
+              });
+              
+              quickSummary = [
+                '## 📊 Quick Summary',
+                '',
+                `**iOS Version:** ${ptJsonData.ios_release || 'Unknown'}`,
+                `**Build:** ${ptJsonData.ios_build || 'Unknown'}`,
+                `**Bundles Changed:** ${ptJsonData.bundles_changed.length}`,
+                '',
+                '| Type | Name | Version Change |',
+                '|------|------|----------------|',
+                ...summaryRows,
+                ''
+              ].join('\n');
+              
+              ptJsonSection = [
+                '## 🤖 Machine-Readable Format',
+                '',
+                '<details>',
+                '<summary>Click to view JSON (for automated processing)</summary>',
+                '',
+                '```json',
+                ptJsonText.trim(),
+                '```',
+                '',
+                '</details>',
+                ''
+              ].join('\n');
+            }
+
             const preamble = [
-              `Automated carrier bundle report.`,
+              quickSummary,
+              `## 📝 Report Details`,
               '',
-              `- Compare base: ${process.env.COMPARE_BASE}`,
-              `- Compare head: ${process.env.COMPARE_HEAD}`,
-              `- Workflow run: ${process.env.RUN_URL}`,
+              `- **Compare base:** ${process.env.COMPARE_BASE}`,
+              `- **Compare head:** ${process.env.COMPARE_HEAD}`,
+              `- **Workflow run:** ${process.env.RUN_URL}`,
               '',
               portugalSection,
               ptCarrierSection
             ].join('\n');
 
             const fullArtifactSection = [
-              '## Full report artifact',
+              '## 📦 Full Report Artifacts',
               '',
-              `- Open artifacts: ${process.env.RUN_URL}#artifacts`,
-              '- Included files:',
-              '  - `reports/cb-change-report.json`',
-              '  - `reports/cb-change-report.md`',
-              '  - `reports/portugal-bundle-diff.txt`',
-              '  - `reports/pt-carrier-bundles-diff.txt`',
+              `Download full report files from [workflow artifacts](${process.env.RUN_URL}#artifacts)`,
+              '',
+              '**Included files:**',
+              '- `reports/cb-change-report.json` - Complete carrier bundle changes',
+              '- `reports/cb-change-report.md` - Human-readable report',
+              '- `reports/portugal-bundle-diff.txt` - Portugal country bundle diff',
+              '- `reports/pt-carrier-bundles-diff.txt` - PT carrier bundles diff',
+              '- `reports/portugal-changes.json` - Machine-readable PT changes',
               ''
             ].join('\n');
 
@@ -460,21 +534,35 @@ jobs:
 
             const uniqueKeyPaths = Array.from(new Set(newKeyPaths)).sort((a, b) => a.localeCompare(b));
             const keyLines = uniqueKeyPaths.length > 0
-              ? uniqueKeyPaths.map(keyPath => `- ${keyPath}`)
-              : ['- None detected.'];
+              ? uniqueKeyPaths.map(keyPath => `- \`${keyPath}\``)
+              : ['⚪ None detected'];
 
-            const keysHeader = ['## Newly Detected Plist Keys', ''].join('\n');
+            const keySummary = uniqueKeyPaths.length > 0 
+              ? `**${uniqueKeyPaths.length}** new plist key${uniqueKeyPaths.length > 1 ? 's' : ''} detected`
+              : 'No new plist keys detected';
+
+            const keysHeader = ['## 🔑 Newly Detected Plist Keys', '', keySummary, ''].join('\n');
             const keysFooter = [''].join('\n');
-            const reservedChars = preamble.length + fullArtifactSection.length + keysHeader.length + keysFooter.length + 4;
+            const reservedChars = preamble.length + ptJsonSection.length + fullArtifactSection.length + keysHeader.length + keysFooter.length + 4;
             const keysBudget = Math.max(0, ISSUE_BODY_TARGET_CHARS - reservedChars);
-            const truncatedKeys = truncateForBlock(keyLines.join('\n'), keysBudget);
+            
+            let keysContent = keyLines.join('\n');
+            if (uniqueKeyPaths.length > 0) {
+              keysContent = ['<details>', '<summary>View all keys</summary>', '', keysContent, '', '</details>'].join('\n');
+            }
+            const truncatedKeys = truncateForBlock(keysContent, keysBudget);
 
             const body = [
               preamble,
+              ptJsonSection,
               fullArtifactSection,
               keysHeader,
               truncatedKeys,
               keysFooter,
+              '---',
+              '',
+              '_This issue was automatically generated by the carrier bundle change detection workflow._',
+              '_For questions or to manually trigger checks, see the [workflow documentation](../../actions/workflows/carrier-bundle-change-alerts.yml)._'
             ].join('\n');
 
             let finalBody = body;
@@ -488,11 +576,26 @@ jobs:
               finalBody = finalBody.slice(0, MAX_ISSUE_BODY_CHARS - 1);
             }
 
+            // Determine labels
+            const labels = ['carrier-bundles', 'automated-report'];
+            if (portugalChanged) labels.push('portugal');
+            if (ptCarrierChanged) labels.push('pt-carriers');
+            
+            // Extract iOS version for label if available
+            if (ptJsonData && ptJsonData.ios_version) {
+              const version = ptJsonData.ios_version;
+              labels.push(`ios-${version}`);
+              if (ptJsonData.ios_release && ptJsonData.ios_release.includes('beta')) {
+                labels.push('beta');
+              }
+            }
+
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: process.env.ISSUE_TITLE,
-              body: finalBody
+              body: finalBody,
+              labels: labels
             });
 
       - name: Clean up worktree

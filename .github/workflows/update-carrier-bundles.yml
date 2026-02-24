@@ -11,7 +11,7 @@ on:
         required: false
         default: "true"
   schedule:
-    - cron: '17 */6 * * *'
+    - cron: '17 */12 * * *'
 env:
   DEVICE: ${{ github.event.inputs.device || 'iPhone18,3' }}
   INCLUDE_BETA: ${{ github.event.inputs.include_beta || 'true' }}

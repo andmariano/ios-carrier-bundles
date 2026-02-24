@@ -1,0 +1,47 @@
+{
+  "report_generated": "2026-02-24T23:26:36.361194+00:00",
+  "ios_version": "26.4",
+  "ios_build": "23E5218e",
+  "ios_release": "iOS 26.4 beta 2",
+  "release_date": "2026-02-23",
+  "commit_sha": "HEAD",
+  "country": "Portugal",
+  "country_code": "PT",
+  "bundles_changed": [
+    {
+      "type": "country",
+      "name": "Portugal",
+      "bundle_id": "com.apple.Portugal",
+      "version_old": "68.5",
+      "version_new": "68.5",
+      "files_modified": [
+        "Info.plist",
+        "signatures/common.plist"
+      ]
+    },
+    {
+      "type": "carrier",
+      "name": "Optimus",
+      "bundle_id": "com.apple.Optimus_pt",
+      "version_old": "68.5.2",
+      "version_new": "68.5.2",
+      "files_modified": []
+    },
+    {
+      "type": "carrier",
+      "name": "TMN",
+      "bundle_id": "com.apple.TMN_pt",
+      "version_old": "68.5.1",
+      "version_new": "68.5.1",
+      "files_modified": []
+    },
+    {
+      "type": "carrier",
+      "name": "Vodafone",
+      "bundle_id": "com.apple.Vodafone_pt",
+      "version_old": "68.5",
+      "version_new": "68.5",
+      "files_modified": []
+    }
+  ]
+}
