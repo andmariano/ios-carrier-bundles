@@ -5,7 +5,7 @@ This repo contains the Carrier Bundles currently bundled with iOS version 26.4 f
 ## Last Extraction Metadata
 
 #### Last Extraction Time
-`2026-02-23 22:53:46 UTC`
+`2026-02-24 00:16:34 UTC`
 
 #### iOS Build Info
 
@@ -58,13 +58,6 @@ If a ref is not found, the workflow automatically treats that value as an iOS ve
 	- Newly introduced plist `key_path` options (schema/key presence only)
 - Dedicated alert when `Country Bundles/Portugal.bundle` changes
 - Dedicated alert when any carrier bundle matching `Carrier Bundles/*_pt.bundle` changes
-
-### Email Notifications
-
-This runs fully on GitHub (no n8n required):
-
-1. In your GitHub notification settings, enable email notifications.
-2. Watch this repository and include `Issues` in custom watch settings.
 
 Each time the report workflow runs on a bundle update, it opens a new issue with:
 
