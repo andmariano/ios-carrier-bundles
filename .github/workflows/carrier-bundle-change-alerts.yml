@@ -278,6 +278,12 @@ jobs:
 
           IOS_VERSION=$(jq -r '.version // "unknown"' /tmp/head-bundles/ipsw_metadata.json 2>/dev/null || echo "unknown")
           IOS_BUILD=$(jq -r '.build // "unknown"' /tmp/head-bundles/ipsw_metadata.json 2>/dev/null || echo "unknown")
+          IOS_OS=$(jq -r '.os // ""' /tmp/head-bundles/ipsw_metadata.json 2>/dev/null || echo "")
+
+          IOS_VERSION_LABEL="${IOS_VERSION}"
+          if [[ "$IOS_BUILD" =~ [a-z]$ ]] || [[ "$IOS_OS" =~ [Dd]evelopment|[Bb]eta|[Ss]eed|[Rr][Cc] ]]; then
+            IOS_VERSION_LABEL="${IOS_VERSION} beta"
+          fi
 
           PORTUGAL_CHANGED="false"
           PT_CARRIER_CHANGED="false"
@@ -334,7 +340,7 @@ jobs:
           cp /tmp/portugal_changes.txt "${GITHUB_WORKSPACE}/reports/portugal-bundle-diff.txt"
           cp /tmp/pt_carrier_bundle_changes.txt "${GITHUB_WORKSPACE}/reports/pt-carrier-bundles-diff.txt"
 
-          TITLE="${TITLE_PREFIX}New Carriers/Tags Report: iOS ${IOS_VERSION} (${IOS_BUILD})"
+          TITLE="${TITLE_PREFIX}New Carriers/Tags Report: iOS ${IOS_VERSION_LABEL} (${IOS_BUILD})"
 
           {
             echo "title=${TITLE}"
