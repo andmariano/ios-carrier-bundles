@@ -1,9 +1,9 @@
 
-# iOS (IOS_VERSION) Carrier Bundles
+# iOS Carrier Bundles
 
-This repo contains the Carrier Bundles currently bundled with iOS version (IOS_VERSION) for the (DEVICE_NAME).
+Automated collection of iOS Carrier Bundles extracted from the latest iOS releases.
 
-> **Compatibility Note:** This repository tracks carrier bundles starting with iOS 26. Carrier bundles from iOS 26+ may work on older iOS versions, but compatibility is not guaranteed and feature parity may vary.
+> **Compatibility Note:** This repository tracks carrier bundles starting with iOS 26+. Bundles may work on older iOS versions, but compatibility is not guaranteed and feature parity may vary.
 ## Last Extraction Metadata
 
 #### Last Extraction Time

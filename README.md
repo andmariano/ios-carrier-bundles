@@ -1,19 +1,19 @@
 
-# iOS 26.4 Carrier Bundles
+# iOS Carrier Bundles
 
-This repo contains the Carrier Bundles currently bundled with iOS version 26.4 for the iPhone 17.
+Automated collection of iOS Carrier Bundles extracted from the latest iOS releases.
 
-> **Compatibility Note:** This repository tracks carrier bundles starting with iOS 26. Carrier bundles from iOS 26+ may work on older iOS versions, but compatibility is not guaranteed and feature parity may vary.
+> **Compatibility Note:** This repository tracks carrier bundles starting with iOS 26+. Bundles may work on older iOS versions, but compatibility is not guaranteed and feature parity may vary.
 ## Last Extraction Metadata
 
 #### Last Extraction Time
-`2026-02-24 00:16:34 UTC`
+`2026-02-09 04:56:29 UTC`
 
 #### iOS Build Info
 
 | iOS Version | iOS Build | iOS Build Timestamp |
 | :-------- | :------- | :------------------ |
-| 26.4 | 23E5218e | 16 Feb 2026 04:56:29 UTC |
+| 26.4 | 23E5211a | 09 Feb 2026 04:56:29 UTC |
 
 #### iOS Device Info
 
