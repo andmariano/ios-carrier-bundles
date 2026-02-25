@@ -5,6 +5,7 @@ Queries ipsw.me and ips.dev APIs to find beta/release builds.
 """
 import argparse
 import json
+import re
 import sys
 import urllib.request
 from typing import Any
@@ -63,6 +64,35 @@ def resolve_from_ipsw_dev(device: str, build: str) -> dict[str, str]:
     return {"build": "", "version": "", "url": ""}
 
 
+def resolve_from_ipsw_dev_download_page(device: str, build: str) -> dict[str, str]:
+    """Query ipsw.dev download page and scrape direct Apple CDN URL.
+
+    This avoids dependency on api.ipsw.dev DNS availability.
+    """
+    url = f"https://ipsw.dev/download/{device}/{build}"
+
+    try:
+        request = urllib.request.Request(url, headers=REQUEST_HEADERS)
+        with urllib.request.urlopen(request, timeout=20) as response:
+            html = response.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        print(f"ipsw.dev download page error: {e}", file=sys.stderr)
+        return {"build": "", "version": "", "url": ""}
+
+    match = re.search(r'https://updates\.cdn-apple\.com[^"\'\s]+\.ipsw', html, re.IGNORECASE)
+    if not match:
+        return {"build": "", "version": "", "url": ""}
+
+    version_match = re.search(r'Version\s*</span>\s*<span[^>]*>\s*([^<]+)\s*<', html, re.IGNORECASE)
+    version = version_match.group(1).strip() if version_match else ""
+
+    return {
+        "build": build,
+        "version": version,
+        "url": match.group(0),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Resolve iOS build ID to download URL"
@@ -83,9 +113,13 @@ def main():
     # Try ipsw.me first
     result = resolve_from_ipsw_me(args.device, args.build)
     
-    # Fallback to ipsw.dev
+    # Fallback to ipsw.dev API
     if not result["url"]:
         result = resolve_from_ipsw_dev(args.device, args.build)
+
+    # Final fallback to ipsw.dev HTML page scraping
+    if not result["url"]:
+        result = resolve_from_ipsw_dev_download_page(args.device, args.build)
     
     if not result["url"]:
         print(f"Could not resolve build {args.build} for device {args.device}", file=sys.stderr)
