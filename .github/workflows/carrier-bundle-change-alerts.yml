@@ -485,13 +485,6 @@ jobs:
           echo "Base resolved build: ${{ steps.preflight.outputs.base_resolved_build }}"
           echo "Head resolved build: ${{ steps.preflight.outputs.head_resolved_build }}"
 
-      - name: Upload report artifacts
-        if: steps.preflight.outputs.proceed == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: carrier-bundle-change-report
-          path: reports/
-
       - name: Prepare issue content
         id: issue_data
         if: steps.preflight.outputs.proceed == 'true'
@@ -587,6 +580,13 @@ jobs:
             echo "ios_build=${IOS_BUILD}"
             echo "ios_is_beta=${IOS_IS_BETA}"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Upload report artifacts
+        if: steps.preflight.outputs.proceed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: carrier-bundle-change-report
+          path: reports/
 
       - name: Create GitHub issue with report
         if: steps.preflight.outputs.proceed == 'true'
