@@ -231,7 +231,7 @@ jobs:
             fi
 
             if [ -n "$build" ]; then
-              echo "Preflight: validating ${side} explicit build ${build}"
+              echo "Preflight: validating ${side} explicit build ${build}" >&2
               if ipsw download ipsw --device "${DEVICE}" --build "$build" --urls --no-color >/tmp/${side}-build-urls.txt 2>/tmp/${side}-build-preflight.err; then
                 echo "$build"
                 return 0
@@ -248,8 +248,8 @@ jobs:
 
               echo "::error::Preflight failed for ${side} build ${build}."
               if [ -s /tmp/${side}-build-preflight.err ]; then
-                echo "Preflight details (${side}):"
-                cat /tmp/${side}-build-preflight.err
+                echo "Preflight details (${side}):" >&2
+                cat /tmp/${side}-build-preflight.err >&2
               fi
               return 1
             fi
@@ -280,8 +280,15 @@ jobs:
           fi
 
           if [ "$PROCEED" = "true" ] && [ "${{ steps.refs.outputs.needs_download }}" = "true" ]; then
-            BASE_RESOLVED_BUILD=$(resolve_effective_build "base" "$BASE_SOURCE" "$BASE_VALUE" "$BASE_BUILD")
-            HEAD_RESOLVED_BUILD=$(resolve_effective_build "head" "$HEAD_SOURCE" "$HEAD_VALUE" "$HEAD_BUILD")
+            if ! BASE_RESOLVED_BUILD=$(resolve_effective_build "base" "$BASE_SOURCE" "$BASE_VALUE" "$BASE_BUILD"); then
+              PROCEED="false"
+              REASON="Preflight failed validating base target."
+            fi
+
+            if [ "$PROCEED" = "true" ] && ! HEAD_RESOLVED_BUILD=$(resolve_effective_build "head" "$HEAD_SOURCE" "$HEAD_VALUE" "$HEAD_BUILD"); then
+              PROCEED="false"
+              REASON="Preflight failed validating head target."
+            fi
 
             if [ -n "$BASE_RESOLVED_BUILD" ] && [ -n "$HEAD_RESOLVED_BUILD" ] && [ "$BASE_RESOLVED_BUILD" = "$HEAD_RESOLVED_BUILD" ]; then
               PROCEED="false"
