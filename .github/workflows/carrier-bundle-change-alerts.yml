@@ -192,7 +192,116 @@ jobs:
           sudo dpkg -i /tmp/ipsw.deb
           rm /tmp/ipsw.deb
 
+      - name: Preflight compare targets
+        id: preflight
+        run: |
+          set -euo pipefail
+
+          BASE_SOURCE="${{ steps.refs.outputs.base_source }}"
+          HEAD_SOURCE="${{ steps.refs.outputs.head_source }}"
+          BASE_SHA="${{ steps.refs.outputs.base_sha }}"
+          HEAD_SHA="${{ steps.refs.outputs.head_sha }}"
+          BASE_VALUE="${{ steps.refs.outputs.base_value }}"
+          HEAD_VALUE="${{ steps.refs.outputs.head_value }}"
+          BASE_BUILD="${{ steps.refs.outputs.base_build }}"
+          HEAD_BUILD="${{ steps.refs.outputs.head_build }}"
+          INCLUDE_BETA="${{ github.event.inputs.include_beta || 'true' }}"
+
+          PROCEED="true"
+          REASON=""
+          BASE_RESOLVED_BUILD=""
+          HEAD_RESOLVED_BUILD=""
+
+          supports_beta_flag="false"
+          if [ "${{ steps.refs.outputs.needs_download }}" = "true" ]; then
+            if [ "$INCLUDE_BETA" = "true" ] && ipsw download ipsw --help 2>&1 | grep -q -- '--beta'; then
+              supports_beta_flag="true"
+            fi
+          fi
+
+          resolve_effective_build() {
+            local side="$1"
+            local source="$2"
+            local version="$3"
+            local build="$4"
+
+            if [ "$source" = "git" ]; then
+              echo ""
+              return 0
+            fi
+
+            if [ -n "$build" ]; then
+              echo "Preflight: validating ${side} explicit build ${build}"
+              if ipsw download ipsw --device "${DEVICE}" --build "$build" --urls --no-color >/tmp/${side}-build-urls.txt 2>/tmp/${side}-build-preflight.err; then
+                echo "$build"
+                return 0
+              fi
+
+              if python3 scripts/resolve_build.py --device "${DEVICE}" --build "$build" >/tmp/${side}-resolved-build.json 2>>/tmp/${side}-build-preflight.err; then
+                local resolved_url
+                resolved_url=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("url",""))' /tmp/${side}-resolved-build.json | tr -d '\r' | xargs)
+                if [ -n "$resolved_url" ] && curl -IfsSL --connect-timeout 10 --retry 2 "$resolved_url" >/dev/null; then
+                  echo "$build"
+                  return 0
+                fi
+              fi
+
+              echo "::error::Preflight failed for ${side} build ${build}."
+              if [ -s /tmp/${side}-build-preflight.err ]; then
+                echo "Preflight details (${side}):"
+                cat /tmp/${side}-build-preflight.err
+              fi
+              return 1
+            fi
+
+            if [ -n "$version" ]; then
+              local resolved
+              local cmd=(ipsw download ipsw --device "${DEVICE}" --version "$version" --show-latest-build --no-color)
+              if [ "$INCLUDE_BETA" = "true" ] && [ "$supports_beta_flag" = "true" ]; then
+                cmd+=(--beta)
+              fi
+
+              resolved=$("${cmd[@]}" | tr -d '\r' | tail -n1 | xargs)
+              if [ -z "$resolved" ]; then
+                echo "::error::Preflight failed resolving ${side} version ${version}."
+                return 1
+              fi
+              echo "$resolved"
+              return 0
+            fi
+
+            echo "::error::Preflight missing both version and build for ${side}."
+            return 1
+          }
+
+          if [ "$BASE_SOURCE" = "git" ] && [ "$HEAD_SOURCE" = "git" ] && [ -n "$BASE_SHA" ] && [ "$BASE_SHA" = "$HEAD_SHA" ]; then
+            PROCEED="false"
+            REASON="Base and head resolve to the same git commit (${BASE_SHA})."
+          fi
+
+          if [ "$PROCEED" = "true" ] && [ "${{ steps.refs.outputs.needs_download }}" = "true" ]; then
+            BASE_RESOLVED_BUILD=$(resolve_effective_build "base" "$BASE_SOURCE" "$BASE_VALUE" "$BASE_BUILD")
+            HEAD_RESOLVED_BUILD=$(resolve_effective_build "head" "$HEAD_SOURCE" "$HEAD_VALUE" "$HEAD_BUILD")
+
+            if [ -n "$BASE_RESOLVED_BUILD" ] && [ -n "$HEAD_RESOLVED_BUILD" ] && [ "$BASE_RESOLVED_BUILD" = "$HEAD_RESOLVED_BUILD" ]; then
+              PROCEED="false"
+              REASON="Base and head resolve to the same iOS build (${BASE_RESOLVED_BUILD}); nothing to compare."
+            fi
+          fi
+
+          {
+            echo "proceed=$PROCEED"
+            echo "reason=$REASON"
+            echo "base_resolved_build=$BASE_RESOLVED_BUILD"
+            echo "head_resolved_build=$HEAD_RESOLVED_BUILD"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$PROCEED" = "false" ]; then
+            echo "::notice::Skipping comparison: $REASON"
+          fi
+
       - name: Prepare comparison trees
+        if: steps.preflight.outputs.proceed == 'true'
         run: |
           set -euo pipefail
           INCLUDE_BETA="${{ github.event.inputs.include_beta || 'true' }}"
@@ -288,6 +397,7 @@ jobs:
           fi
 
       - name: Build carrier bundle diff report
+        if: steps.preflight.outputs.proceed == 'true'
         run: |
           python3 scripts/cb_change_report.py \
             --old-dir "/tmp/base-bundles/Carrier Bundles" \
@@ -295,7 +405,16 @@ jobs:
             --output-json "${GITHUB_WORKSPACE}/reports/cb-change-report.json" \
             --output-md "${GITHUB_WORKSPACE}/reports/cb-change-report.md"
 
+      - name: Skip when no actionable comparison
+        if: steps.preflight.outputs.proceed != 'true'
+        run: |
+          echo "Skipping report and issue creation."
+          echo "Reason: ${{ steps.preflight.outputs.reason }}"
+          echo "Base resolved build: ${{ steps.preflight.outputs.base_resolved_build }}"
+          echo "Head resolved build: ${{ steps.preflight.outputs.head_resolved_build }}"
+
       - name: Upload report artifacts
+        if: steps.preflight.outputs.proceed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: carrier-bundle-change-report
@@ -303,6 +422,7 @@ jobs:
 
       - name: Prepare issue content
         id: issue_data
+        if: steps.preflight.outputs.proceed == 'true'
         run: |
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
@@ -392,6 +512,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub issue with report
+        if: steps.preflight.outputs.proceed == 'true'
         uses: actions/github-script@v7
         env:
           REPORT_JSON_PATH: reports/cb-change-report.json
