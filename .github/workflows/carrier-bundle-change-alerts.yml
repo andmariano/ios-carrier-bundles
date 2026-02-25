@@ -234,11 +234,22 @@ jobs:
           REASON=""
           BASE_RESOLVED_BUILD=""
           HEAD_RESOLVED_BUILD=""
+          BASE_VERSION_BETA_UNRESOLVED="false"
+          HEAD_VERSION_BETA_UNRESOLVED="false"
 
           supports_beta_flag="false"
           if [ "${{ steps.refs.outputs.needs_download }}" = "true" ]; then
             if [ "$INCLUDE_BETA" = "true" ] && ipsw download ipsw --help 2>&1 | grep -q -- '--beta'; then
               supports_beta_flag="true"
+            fi
+          fi
+
+          if [ "$INCLUDE_BETA" = "true" ] && [ "$supports_beta_flag" = "false" ]; then
+            if [ "$BASE_SOURCE" = "version" ] && [ -n "$BASE_VALUE" ] && [ -z "$BASE_BUILD" ] && [ -z "$BASE_URL" ]; then
+              BASE_VERSION_BETA_UNRESOLVED="true"
+            fi
+            if [ "$HEAD_SOURCE" = "version" ] && [ -n "$HEAD_VALUE" ] && [ -z "$HEAD_BUILD" ] && [ -z "$HEAD_URL" ]; then
+              HEAD_VERSION_BETA_UNRESOLVED="true"
             fi
           fi
 
@@ -326,7 +337,11 @@ jobs:
 
             if [ -n "$BASE_RESOLVED_BUILD" ] && [ -n "$HEAD_RESOLVED_BUILD" ] && [ "$BASE_RESOLVED_BUILD" = "$HEAD_RESOLVED_BUILD" ]; then
               PROCEED="false"
-              REASON="Base and head resolve to the same iOS build (${BASE_RESOLVED_BUILD}); nothing to compare."
+              if [ "$BASE_VERSION_BETA_UNRESOLVED" = "true" ] || [ "$HEAD_VERSION_BETA_UNRESOLVED" = "true" ]; then
+                REASON="Base/head resolved to same stable build (${BASE_RESOLVED_BUILD}) because runner ipsw lacks --beta support. Provide explicit build(s) (base_build/head_build) or direct URL(s) (base_url/head_url) for beta comparisons."
+              else
+                REASON="Base and head resolve to the same iOS build (${BASE_RESOLVED_BUILD}); nothing to compare."
+              fi
             fi
           fi
 
