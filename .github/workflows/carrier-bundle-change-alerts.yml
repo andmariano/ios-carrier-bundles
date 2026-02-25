@@ -49,6 +49,10 @@ on:
         description: "Include beta/RC releases when downloading by version/build"
         required: false
         default: "true"
+      release_tag:
+        description: "Optional prerelease label for issue tagging (example: beta2, beta3, rc1)"
+        required: false
+        default: ""
 
 env:
   DEVICE: ${{ github.event.inputs.device || 'iPhone18,3' }}
@@ -600,6 +604,7 @@ jobs:
           IOS_VERSION: ${{ steps.issue_data.outputs.ios_version }}
           IOS_BUILD: ${{ steps.issue_data.outputs.ios_build }}
           IOS_IS_BETA: ${{ steps.issue_data.outputs.ios_is_beta }}
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
           ISSUE_TITLE: ${{ steps.issue_data.outputs.title }}
         with:
           script: |
@@ -867,6 +872,16 @@ jobs:
             const labels = ['carrier-bundles', 'automated-report'];
             if (portugalChanged) labels.push('portugal');
             if (ptCarrierChanged) labels.push('pt-carriers');
+            const releaseTagRaw = (process.env.RELEASE_TAG || '').trim();
+            if (releaseTagRaw) {
+              const normalizedReleaseTag = releaseTagRaw
+                .toLowerCase()
+                .replace(/[^a-z0-9._-]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+              if (normalizedReleaseTag) {
+                labels.push(normalizedReleaseTag);
+              }
+            }
             
             // Extract iOS version for label if available
             if (ptJsonData && ptJsonData.ios_version) {
@@ -877,12 +892,30 @@ jobs:
               }
             }
 
+            // Automatic dynamic beta labels (no hardcoding)
+            const iosVersionForLabels = (process.env.IOS_VERSION || '').trim();
+            const iosBuildForLabels = (process.env.IOS_BUILD || '').trim();
+            const iosIsBetaForLabels = process.env.IOS_IS_BETA === 'true'
+              || /[a-z]$/i.test(iosBuildForLabels);
+
+            if (iosIsBetaForLabels) {
+              labels.push('beta');
+              if (iosVersionForLabels) {
+                labels.push(`ios-${iosVersionForLabels}-beta`);
+              }
+              if (iosBuildForLabels) {
+                labels.push(`beta-build-${iosBuildForLabels.toLowerCase()}`);
+              }
+            }
+
+            const dedupedLabels = Array.from(new Set(labels));
+
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: process.env.ISSUE_TITLE,
               body: finalBody,
-              labels: labels
+              labels: dedupedLabels
             });
 
       - name: Clean up worktree
