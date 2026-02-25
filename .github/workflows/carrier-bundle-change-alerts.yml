@@ -327,12 +327,20 @@ jobs:
           if [ "$PROCEED" = "true" ] && [ "${{ steps.refs.outputs.needs_download }}" = "true" ]; then
             if ! BASE_RESOLVED_BUILD=$(resolve_effective_build "base" "$BASE_SOURCE" "$BASE_VALUE" "$BASE_BUILD" "$BASE_URL"); then
               PROCEED="false"
-              REASON="Preflight failed validating base target."
+              if [ -n "$BASE_BUILD" ]; then
+                REASON="Preflight failed validating base build ${BASE_BUILD}. This build may no longer be available in public Apple/ipsw feeds for ${DEVICE}. Use base_url with a direct Apple CDN IPSW URL if you have one."
+              else
+                REASON="Preflight failed validating base target."
+              fi
             fi
 
             if [ "$PROCEED" = "true" ] && ! HEAD_RESOLVED_BUILD=$(resolve_effective_build "head" "$HEAD_SOURCE" "$HEAD_VALUE" "$HEAD_BUILD" "$HEAD_URL"); then
               PROCEED="false"
-              REASON="Preflight failed validating head target."
+              if [ -n "$HEAD_BUILD" ]; then
+                REASON="Preflight failed validating head build ${HEAD_BUILD}. This build may no longer be available in public Apple/ipsw feeds for ${DEVICE}. Use head_url with a direct Apple CDN IPSW URL if you have one."
+              else
+                REASON="Preflight failed validating head target."
+              fi
             fi
 
             if [ -n "$BASE_RESOLVED_BUILD" ] && [ -n "$HEAD_RESOLVED_BUILD" ] && [ "$BASE_RESOLVED_BUILD" = "$HEAD_RESOLVED_BUILD" ]; then
@@ -489,10 +497,12 @@ jobs:
           IOS_VERSION=$(jq -r '.version // "unknown"' /tmp/head-bundles/ipsw_metadata.json 2>/dev/null || echo "unknown")
           IOS_BUILD=$(jq -r '.build // "unknown"' /tmp/head-bundles/ipsw_metadata.json 2>/dev/null || echo "unknown")
           IOS_OS=$(jq -r '.os // ""' /tmp/head-bundles/ipsw_metadata.json 2>/dev/null || echo "")
+          IOS_IS_BETA="false"
 
           IOS_VERSION_LABEL="${IOS_VERSION}"
           if [[ "$IOS_BUILD" =~ [a-z]$ ]] || [[ "$IOS_OS" =~ [Dd]evelopment|[Bb]eta|[Ss]eed|[Rr][Cc] ]]; then
             IOS_VERSION_LABEL="${IOS_VERSION} beta"
+            IOS_IS_BETA="true"
           fi
 
           PORTUGAL_CHANGED="false"
@@ -569,6 +579,9 @@ jobs:
             echo "pt_carrier_changes_file=/tmp/pt_carrier_bundle_changes.txt"
             echo "compare_base=${{ steps.refs.outputs.base_label }}"
             echo "compare_head=${{ steps.refs.outputs.head_label }}"
+            echo "ios_version=${IOS_VERSION}"
+            echo "ios_build=${IOS_BUILD}"
+            echo "ios_is_beta=${IOS_IS_BETA}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub issue with report
@@ -584,6 +597,9 @@ jobs:
           RUN_URL: ${{ steps.issue_data.outputs.run_url }}
           COMPARE_BASE: ${{ steps.issue_data.outputs.compare_base }}
           COMPARE_HEAD: ${{ steps.issue_data.outputs.compare_head }}
+          IOS_VERSION: ${{ steps.issue_data.outputs.ios_version }}
+          IOS_BUILD: ${{ steps.issue_data.outputs.ios_build }}
+          IOS_IS_BETA: ${{ steps.issue_data.outputs.ios_is_beta }}
           ISSUE_TITLE: ${{ steps.issue_data.outputs.title }}
         with:
           script: |
@@ -708,6 +724,31 @@ jobs:
               ].join('\n');
             }
 
+            const iosVersion = (process.env.IOS_VERSION || (ptJsonData && ptJsonData.ios_version) || '').trim();
+            const iosBuild = (process.env.IOS_BUILD || (ptJsonData && ptJsonData.ios_build) || '').trim();
+            const iosIsBeta = process.env.IOS_IS_BETA === 'true';
+            const versionSlug = iosVersion ? iosVersion.replace(/\./g, '_') : '';
+            const releaseNotesUrl = versionSlug
+              ? `https://developer.apple.com/documentation/ios-ipados-release-notes/ios-ipados-${versionSlug}-release-notes`
+              : 'https://developer.apple.com/documentation/ios-ipados-release-notes';
+            const developerSearchQuery = iosVersion
+              ? `iOS ${iosVersion} ${iosIsBeta ? 'beta ' : ''}release notes ${iosBuild}`.trim()
+              : 'iOS release notes';
+            const developerSearchUrl = `https://developer.apple.com/search/?q=${encodeURIComponent(developerSearchQuery)}`;
+
+            const appleReleaseNotesSection = [
+              '## 🍎 Apple Release Notes',
+              '',
+              `- [Developer Release Notes (${iosVersion || 'iOS'})](${releaseNotesUrl})`,
+              `- [Apple Developer Search (${developerSearchQuery})](${developerSearchUrl})`,
+              '- [Apple Security Releases](https://support.apple.com/en-us/100100)',
+              '',
+              iosIsBeta
+                ? '_Beta release notes can appear later and may require Apple Developer sign-in._'
+                : '_Release notes availability depends on Apple publication timing._',
+              ''
+            ].join('\n');
+
             const preamble = [
               quickSummary,
               `## 📝 Report Details`,
@@ -716,6 +757,7 @@ jobs:
               `- **Compare head:** ${process.env.COMPARE_HEAD}`,
               `- **Workflow run:** ${process.env.RUN_URL}`,
               '',
+              appleReleaseNotesSection,
               portugalSection,
               ptCarrierSection
             ].join('\n');
