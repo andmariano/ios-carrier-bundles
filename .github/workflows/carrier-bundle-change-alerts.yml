@@ -609,6 +609,9 @@ jobs:
 
             const reportJson = fs.readFileSync(process.env.REPORT_JSON_PATH, 'utf8');
             const report = JSON.parse(reportJson);
+            const summary = report.summary || {};
+            const newCarriersDetected = Number(summary.new_carriers_detected || 0);
+            const newKeysDetected = Number(summary.new_keys_detected || 0);
             const portugalChanged = process.env.PORTUGAL_CHANGED === 'true';
             const portugalChanges = fs.existsSync(process.env.PORTUGAL_CHANGES_FILE)
               ? fs.readFileSync(process.env.PORTUGAL_CHANGES_FILE, 'utf8').trim()
@@ -638,17 +641,21 @@ jobs:
               return content.slice(0, sliceLen) + notice;
             }
 
+            const INLINE_DIFF_MAX_CHARS = 14000;
+            const portugalInlineDiff = truncateForBlock(portugalChanges, INLINE_DIFF_MAX_CHARS);
+            const ptCarrierInlineDiff = truncateForBlock(ptCarrierChanges, INLINE_DIFF_MAX_CHARS);
+
             const portugalSection = portugalChanged
               ? [
                   '### 🌍 Portugal Country Bundle',
                   '',
                   '✅ **Changes detected** in `Country Bundles/Portugal.bundle`',
                   '',
-                  '<details>',
+                  '<details open>',
                   '<summary>View detailed changes</summary>',
                   '',
                   '```diff',
-                  portugalChanges,
+                  portugalInlineDiff,
                   '```',
                   '',
                   '</details>',
@@ -667,11 +674,11 @@ jobs:
                   '',
                   '✅ **Changes detected** in carrier bundles matching `Carrier Bundles/*_pt.bundle`',
                   '',
-                  '<details>',
+                  '<details open>',
                   '<summary>View detailed changes</summary>',
                   '',
                   '```diff',
-                  ptCarrierChanges,
+                  ptCarrierInlineDiff,
                   '```',
                   '',
                   '</details>',
@@ -724,13 +731,38 @@ jobs:
               ].join('\n');
             }
 
+            const topChangedBundles = Array.isArray(report.new_tags_by_bundle)
+              ? report.new_tags_by_bundle
+                  .map(item => ({
+                    bundle: item.bundle,
+                    count: Array.isArray(item.new_key_paths) ? item.new_key_paths.length : 0,
+                  }))
+                  .sort((a, b) => b.count - a.count)
+                  .slice(0, 10)
+              : [];
+
+            const topBundleLines = topChangedBundles.length > 0
+              ? topChangedBundles.map(item => `- \`${item.bundle}\`: ${item.count} new keys`)
+              : ['- None'];
+
+            const changeVolumeSection = [
+              '## 📈 Change Volume',
+              '',
+              `- New carriers detected: **${newCarriersDetected}**`,
+              `- New plist keys detected: **${newKeysDetected}**`,
+              `- Portugal country bundle changed: **${portugalChanged ? 'yes' : 'no'}**`,
+              `- Portugal _pt carrier bundles changed: **${ptCarrierChanged ? 'yes' : 'no'}**`,
+              '',
+              '**Top changed bundles (by new key count):**',
+              ...topBundleLines,
+              ''
+            ].join('\n');
+
             const iosVersion = (process.env.IOS_VERSION || (ptJsonData && ptJsonData.ios_version) || '').trim();
             const iosBuild = (process.env.IOS_BUILD || (ptJsonData && ptJsonData.ios_build) || '').trim();
             const iosIsBeta = process.env.IOS_IS_BETA === 'true';
-            const versionSlug = iosVersion ? iosVersion.replace(/\./g, '_') : '';
-            const releaseNotesUrl = versionSlug
-              ? `https://developer.apple.com/documentation/ios-ipados-release-notes/ios-ipados-${versionSlug}-release-notes`
-              : 'https://developer.apple.com/documentation/ios-ipados-release-notes';
+            const releaseNotesUrl = 'https://developer.apple.com/documentation/ios-ipados-release-notes';
+            const iosDocsUrl = 'https://developer.apple.com/ios/';
             const developerSearchQuery = iosVersion
               ? `iOS ${iosVersion} ${iosIsBeta ? 'beta ' : ''}release notes ${iosBuild}`.trim()
               : 'iOS release notes';
@@ -739,7 +771,8 @@ jobs:
             const appleReleaseNotesSection = [
               '## 🍎 Apple Release Notes',
               '',
-              `- [Developer Release Notes (${iosVersion || 'iOS'})](${releaseNotesUrl})`,
+              `- [Apple iOS/iPadOS Release Notes](${releaseNotesUrl})`,
+              `- [Apple iOS Developer Page](${iosDocsUrl})`,
               `- [Apple Developer Search (${developerSearchQuery})](${developerSearchUrl})`,
               '- [Apple Security Releases](https://support.apple.com/en-us/100100)',
               '',
@@ -758,6 +791,7 @@ jobs:
               `- **Workflow run:** ${process.env.RUN_URL}`,
               '',
               appleReleaseNotesSection,
+              changeVolumeSection,
               portugalSection,
               ptCarrierSection
             ].join('\n');
