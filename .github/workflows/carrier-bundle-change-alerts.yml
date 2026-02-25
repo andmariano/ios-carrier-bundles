@@ -17,12 +17,20 @@ on:
         description: "Base iOS build (optional, supports beta/RC targeting, example: 23E5222f)"
         required: false
         default: ""
+      base_url:
+        description: "Base IPSW direct URL (optional override when build/version resolution is unavailable)"
+        required: false
+        default: ""
       head_version:
         description: "Head iOS version (preferred for custom version compare, example: 26.3)"
         required: false
         default: ""
       head_build:
         description: "Head iOS build (optional, supports beta/RC targeting, example: 23E5230a)"
+        required: false
+        default: ""
+      head_url:
+        description: "Head IPSW direct URL (optional override when build/version resolution is unavailable)"
         required: false
         default: ""
       base_ref:
@@ -63,14 +71,21 @@ jobs:
           resolve_input() {
             local raw_input="$1"
             local raw_build="$2"
-            local fallback_git_sha="$3"
+            local raw_url="$3"
+            local fallback_git_sha="$4"
             local source=""
             local value=""
             local build=""
+            local url=""
             local sha=""
             local label=""
 
-            if [ -n "$raw_build" ]; then
+            if [ -n "$raw_url" ]; then
+              source="url"
+              value="$raw_url"
+              url="$raw_url"
+              label="url:${raw_url}"
+            elif [ -n "$raw_build" ]; then
               source="version"
               value="$raw_input"
               build="$raw_build"
@@ -97,7 +112,7 @@ jobs:
               label="git:${sha}"
             fi
 
-            echo "$source|$value|$build|$sha|$label"
+            echo "$source|$value|$build|$url|$sha|$label"
           }
 
           DEFAULT_HEAD_SHA="${GITHUB_SHA}"
@@ -111,21 +126,25 @@ jobs:
           HEAD_INPUT="${{ github.event.inputs.head_version || github.event.inputs.head_ref }}"
           BASE_BUILD_INPUT="${{ github.event.inputs.base_build }}"
           HEAD_BUILD_INPUT="${{ github.event.inputs.head_build }}"
+          BASE_URL_INPUT="${{ github.event.inputs.base_url }}"
+          HEAD_URL_INPUT="${{ github.event.inputs.head_url }}"
 
-          HEAD_RESULT=$(resolve_input "$HEAD_INPUT" "$HEAD_BUILD_INPUT" "$DEFAULT_HEAD_SHA")
-          BASE_RESULT=$(resolve_input "$BASE_INPUT" "$BASE_BUILD_INPUT" "$DEFAULT_BASE_SHA")
+          HEAD_RESULT=$(resolve_input "$HEAD_INPUT" "$HEAD_BUILD_INPUT" "$HEAD_URL_INPUT" "$DEFAULT_HEAD_SHA")
+          BASE_RESULT=$(resolve_input "$BASE_INPUT" "$BASE_BUILD_INPUT" "$BASE_URL_INPUT" "$DEFAULT_BASE_SHA")
 
           HEAD_SOURCE=$(echo "$HEAD_RESULT" | cut -d'|' -f1)
           HEAD_VALUE=$(echo "$HEAD_RESULT" | cut -d'|' -f2)
           HEAD_BUILD=$(echo "$HEAD_RESULT" | cut -d'|' -f3)
-          HEAD_SHA=$(echo "$HEAD_RESULT" | cut -d'|' -f4)
-          HEAD_LABEL=$(echo "$HEAD_RESULT" | cut -d'|' -f5-)
+          HEAD_URL=$(echo "$HEAD_RESULT" | cut -d'|' -f4)
+          HEAD_SHA=$(echo "$HEAD_RESULT" | cut -d'|' -f5)
+          HEAD_LABEL=$(echo "$HEAD_RESULT" | cut -d'|' -f6-)
 
           BASE_SOURCE=$(echo "$BASE_RESULT" | cut -d'|' -f1)
           BASE_VALUE=$(echo "$BASE_RESULT" | cut -d'|' -f2)
           BASE_BUILD=$(echo "$BASE_RESULT" | cut -d'|' -f3)
-          BASE_SHA=$(echo "$BASE_RESULT" | cut -d'|' -f4)
-          BASE_LABEL=$(echo "$BASE_RESULT" | cut -d'|' -f5-)
+          BASE_URL=$(echo "$BASE_RESULT" | cut -d'|' -f4)
+          BASE_SHA=$(echo "$BASE_RESULT" | cut -d'|' -f5)
+          BASE_LABEL=$(echo "$BASE_RESULT" | cut -d'|' -f6-)
 
           NEEDS_DOWNLOAD="false"
           if [ "$BASE_SOURCE" = "version" ] || [ "$HEAD_SOURCE" = "version" ]; then
@@ -136,11 +155,13 @@ jobs:
             echo "base_source=$BASE_SOURCE"
             echo "base_value=$BASE_VALUE"
             echo "base_build=$BASE_BUILD"
+            echo "base_url=$BASE_URL"
             echo "base_sha=$BASE_SHA"
             echo "base_label=$BASE_LABEL"
             echo "head_source=$HEAD_SOURCE"
             echo "head_value=$HEAD_VALUE"
             echo "head_build=$HEAD_BUILD"
+            echo "head_url=$HEAD_URL"
             echo "head_sha=$HEAD_SHA"
             echo "head_label=$HEAD_LABEL"
             echo "needs_download=$NEEDS_DOWNLOAD"
@@ -205,6 +226,8 @@ jobs:
           HEAD_VALUE="${{ steps.refs.outputs.head_value }}"
           BASE_BUILD="${{ steps.refs.outputs.base_build }}"
           HEAD_BUILD="${{ steps.refs.outputs.head_build }}"
+          BASE_URL="${{ steps.refs.outputs.base_url }}"
+          HEAD_URL="${{ steps.refs.outputs.head_url }}"
           INCLUDE_BETA="${{ github.event.inputs.include_beta || 'true' }}"
 
           PROCEED="true"
@@ -224,10 +247,21 @@ jobs:
             local source="$2"
             local version="$3"
             local build="$4"
+            local url="$5"
 
             if [ "$source" = "git" ]; then
               echo ""
               return 0
+            fi
+
+            if [ "$source" = "url" ] && [ -n "$url" ]; then
+              echo "Preflight: validating ${side} direct URL" >&2
+              if curl -IfsSL --connect-timeout 10 --retry 2 "$url" >/dev/null; then
+                echo "url:${url}"
+                return 0
+              fi
+              echo "::error::Preflight failed for ${side} direct URL." >&2
+              return 1
             fi
 
             if [ -n "$build" ]; then
@@ -280,12 +314,12 @@ jobs:
           fi
 
           if [ "$PROCEED" = "true" ] && [ "${{ steps.refs.outputs.needs_download }}" = "true" ]; then
-            if ! BASE_RESOLVED_BUILD=$(resolve_effective_build "base" "$BASE_SOURCE" "$BASE_VALUE" "$BASE_BUILD"); then
+            if ! BASE_RESOLVED_BUILD=$(resolve_effective_build "base" "$BASE_SOURCE" "$BASE_VALUE" "$BASE_BUILD" "$BASE_URL"); then
               PROCEED="false"
               REASON="Preflight failed validating base target."
             fi
 
-            if [ "$PROCEED" = "true" ] && ! HEAD_RESOLVED_BUILD=$(resolve_effective_build "head" "$HEAD_SOURCE" "$HEAD_VALUE" "$HEAD_BUILD"); then
+            if [ "$PROCEED" = "true" ] && ! HEAD_RESOLVED_BUILD=$(resolve_effective_build "head" "$HEAD_SOURCE" "$HEAD_VALUE" "$HEAD_BUILD" "$HEAD_URL"); then
               PROCEED="false"
               REASON="Preflight failed validating head target."
             fi
@@ -318,7 +352,8 @@ jobs:
             local side="$1"
             local version="$2"
             local build="$3"
-            local include_beta="$4"
+            local url="$4"
+            local include_beta="$5"
 
             local side_root="/tmp/${side}-bundles"
             local ipsw_dir="/tmp/${side}-ipsw"
@@ -338,7 +373,10 @@ jobs:
             rm -rf "$side_root" "$ipsw_dir" "$extract_dir"
             mkdir -p "$side_root" "$ipsw_dir" "$extract_dir"
 
-            if [ -n "$build" ]; then
+            if [ -n "$url" ]; then
+              echo "Downloading ${side} from direct URL..."
+              curl -fsSL -o "$ipsw_dir/${side}.ipsw" "$url"
+            elif [ -n "$build" ]; then
               build_download_ok="false"
 
               echo "Attempting direct build download for ${build}..."
@@ -394,13 +432,13 @@ jobs:
           if [ "${{ steps.refs.outputs.base_source }}" = "git" ]; then
             git worktree add --detach /tmp/base-bundles "${{ steps.refs.outputs.base_sha }}"
           else
-            download_and_extract_version base "${{ steps.refs.outputs.base_value }}" "${{ steps.refs.outputs.base_build }}" "${INCLUDE_BETA}"
+            download_and_extract_version base "${{ steps.refs.outputs.base_value }}" "${{ steps.refs.outputs.base_build }}" "${{ steps.refs.outputs.base_url }}" "${INCLUDE_BETA}"
           fi
 
           if [ "${{ steps.refs.outputs.head_source }}" = "git" ]; then
             git worktree add --detach /tmp/head-bundles "${{ steps.refs.outputs.head_sha }}"
           else
-            download_and_extract_version head "${{ steps.refs.outputs.head_value }}" "${{ steps.refs.outputs.head_build }}" "${INCLUDE_BETA}"
+            download_and_extract_version head "${{ steps.refs.outputs.head_value }}" "${{ steps.refs.outputs.head_build }}" "${{ steps.refs.outputs.head_url }}" "${INCLUDE_BETA}"
           fi
 
       - name: Build carrier bundle diff report
