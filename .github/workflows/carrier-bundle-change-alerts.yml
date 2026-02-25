@@ -208,19 +208,35 @@ jobs:
             local ipsw_dir="/tmp/${side}-ipsw"
             local extract_dir="/tmp/${side}-extract"
             local beta_flag=()
+            local supports_beta_flag="false"
 
             if [ "$include_beta" = "true" ]; then
               if ipsw download ipsw --help 2>&1 | grep -q -- '--beta'; then
                 beta_flag=(--beta)
+                supports_beta_flag="true"
               else
-                echo "::warning::include_beta=true but installed ipsw does not support --beta; falling back to stable-only lookup for ${side}."
+                echo "::warning::include_beta=true but installed ipsw does not support --beta; using API fallback for ${side}."
               fi
             fi
 
             rm -rf "$side_root" "$ipsw_dir" "$extract_dir"
             mkdir -p "$side_root" "$ipsw_dir" "$extract_dir"
 
-            if [ -n "$build" ]; then
+            # Use API resolver for beta builds when --beta flag not supported
+            if [ -n "$build" ] && [ "$include_beta" = "true" ] && [ "$supports_beta_flag" = "false" ]; then
+              echo "Resolving beta build ${build} via API..."
+              BUILD_JSON=$(python3 scripts/resolve_build.py --device "${DEVICE}" --build "$build")
+              RESOLVED_URL=$(echo "${BUILD_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("url",""))' | tr -d '\r' | xargs)
+              
+              if [ -z "${RESOLVED_URL}" ]; then
+                echo "::error::Failed to resolve build ${build} for device ${DEVICE} via API"
+                exit 1
+              fi
+              
+              echo "Downloading from resolved URL: ${RESOLVED_URL}"
+              curl -fsSL -o "$ipsw_dir/${build}.ipsw" "${RESOLVED_URL}"
+              
+            elif [ -n "$build" ]; then
               ipsw download ipsw --device "${DEVICE}" --build "$build" "${beta_flag[@]}" --confirm --no-color --output "$ipsw_dir"
             elif [ -n "$version" ]; then
               ipsw download ipsw --device "${DEVICE}" --version "$version" "${beta_flag[@]}" --confirm --no-color --output "$ipsw_dir"
