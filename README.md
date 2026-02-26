@@ -7,13 +7,13 @@ Automated collection of iOS Carrier Bundles extracted from the latest iOS releas
 ## Last Extraction Metadata
 
 #### Last Extraction Time
-`2026-02-25 00:08:06 UTC`
+`2026-02-26 13:50:59 UTC`
 
 #### iOS Build Info
 
 | iOS Version | iOS Build | iOS Build Timestamp |
 | :-------- | :------- | :------------------ |
-| 26.4 | 23E5218e | 16 Feb 2026 04:56:29 UTC |
+| 26.3 | 23D127 | 28 Jan 2026 05:05:59 UTC |
 
 #### iOS Device Info
 
