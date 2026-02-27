@@ -5,25 +5,96 @@
 	<key>PayloadContent</key>
 	<array>
 		<dict>
+			<key>AutoJoin</key>
+			<true/>
+			<key>CaptiveBypass</key>
+			<false/>
+			<key>DisableAssociationMACRandomization</key>
+			<false/>
+			<key>DisplayedOperatorName</key>
+			<string>via Virgin Plus</string>
+			<key>DomainName</key>
+			<string>Virginplus.ca</string>
 			<key>EAPClientConfiguration</key>
 			<dict>
 				<key>AcceptEAPTypes</key>
 				<array>
-					<integer>18</integer>
+					<integer>23</integer>
 				</array>
-				<key>EAPFASTProvisionPAC</key>
-				<false/>
-				<key>EAPFASTProvisionPACAnonymously</key>
-				<false/>
-				<key>EAPFASTUsePAC</key>
-				<false/>
-				<key>TLSAllowTrustExceptions</key>
+				<key>EAPSIMAKAEncryptedIdentityEnabled</key>
 				<true/>
+				<key>PayloadCertificateAnchorUUID</key>
+				<array>
+					<string>9508D817-54C2-433B-ACB1-5F52FAD68121</string>
+				</array>
+				<key>TLSTrustedServerNames</key>
+				<array>
+					<string>imsiencryption</string>
+				</array>
 			</dict>
 			<key>EncryptionType</key>
-			<string>WPA</string>
+			<string>WPA2</string>
 			<key>HIDDEN_NETWORK</key>
+			<false/>
+			<key>IsHotspot</key>
 			<true/>
+			<key>MCCAndMNCs</key>
+			<array>
+				<string>302630</string>
+				<string>302640</string>
+				<string>302610</string>
+			</array>
+			<key>NAIRealmNames</key>
+			<array>
+				<string>wlan.mnc630.mcc302.3gppnetwork.org</string>
+				<string>wlan.mnc640.mcc302.3gppnetwork.org</string>
+				<string>wlan.mnc610.mcc302.3gppnetwork.org</string>
+			</array>
+			<key>PayloadDescription</key>
+			<string>Configures Wi-Fi settings</string>
+			<key>PayloadDisplayName</key>
+			<string>Wi-Fi</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.wifi.managed.B759107F-6256-464C-8219-22C80A178109</string>
+			<key>PayloadOrganization</key>
+			<string>Bell Mobility</string>
+			<key>PayloadType</key>
+			<string>com.apple.wifi.managed</string>
+			<key>PayloadUUID</key>
+			<string>4B1025AF-C19C-4564-A0BC-3F92D7C8100F</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>ProxyType</key>
+			<string>None</string>
+			<key>RoamingConsortiumOIs</key>
+			<array/>
+			<key>ServiceProviderRoamingEnabled</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>AutoJoin</key>
+			<true/>
+			<key>EAPClientConfiguration</key>
+			<dict>
+				<key>AcceptEAPTypes</key>
+				<array>
+					<integer>23</integer>
+				</array>
+				<key>EAPSIMAKAEncryptedIdentityEnabled</key>
+				<true/>
+				<key>PayloadCertificateAnchorUUID</key>
+				<array>
+					<string>5E6D3B41-E969-4E00-B932-B9B872CF2784</string>
+				</array>
+				<key>TLSTrustedServerNames</key>
+				<array>
+					<string>imsiencryption</string>
+				</array>
+			</dict>
+			<key>EncryptionType</key>
+			<string>WPA2</string>
+			<key>HIDDEN_NETWORK</key>
+			<false/>
 			<key>IsHotspot</key>
 			<true/>
 			<key>PayloadDescription</key>
@@ -44,23 +115,27 @@
 			<string>BELL_WIFI</string>
 		</dict>
 		<dict>
+			<key>AutoJoin</key>
+			<true/>
 			<key>EAPClientConfiguration</key>
 			<dict>
 				<key>AcceptEAPTypes</key>
 				<array>
-					<integer>18</integer>
+					<integer>23</integer>
 				</array>
-				<key>EAPFASTProvisionPAC</key>
-				<false/>
-				<key>EAPFASTProvisionPACAnonymously</key>
-				<false/>
-				<key>EAPFASTUsePAC</key>
-				<false/>
-				<key>TLSAllowTrustExceptions</key>
+				<key>EAPSIMAKAEncryptedIdentityEnabled</key>
 				<true/>
+				<key>PayloadCertificateAnchorUUID</key>
+				<array>
+					<string>EE469777-7E19-4527-B056-2C0B5DACA860</string>
+				</array>
+				<key>TLSTrustedServerNames</key>
+				<array>
+					<string>imsiencryption</string>
+				</array>
 			</dict>
 			<key>EncryptionType</key>
-			<string>WPA</string>
+			<string>WPA2</string>
 			<key>HIDDEN_NETWORK</key>
 			<true/>
 			<key>IsHotspot</key>
@@ -86,7 +161,7 @@
 	<key>PayloadDescription</key>
 	<string>Bell Wi-Fi automatic authentication profile</string>
 	<key>PayloadDisplayName</key>
-	<string>Bell Wi-Fi</string>
+	<string>Virgin Pius Wi-Fi</string>
 	<key>PayloadIdentifier</key>
 	<string>com.apple.Bell_ca.eee2dee2-da0e-11eb-b65f-f45c89abb0d9</string>
 	<key>PayloadOrganization</key>
