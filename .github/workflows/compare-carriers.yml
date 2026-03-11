@@ -1,0 +1,110 @@
+name: Compare Carrier Bundles – Between Carriers
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: "Git ref to checkout (branch, tag, or SHA — e.g. main)"
+        required: false
+        default: "main"
+      carrier_a:
+        description: "First carrier bundle name (e.g. NOS_pt.bundle)"
+        required: true
+      carrier_b:
+        description: "Second carrier bundle name (e.g. Vodafone_pt.bundle)"
+        required: true
+      max_key_entries:
+        description: "Max plist key entries per report section"
+        required: false
+        default: "1000"
+
+jobs:
+  compare-carriers:
+    name: Compare ${{ github.event.inputs.carrier_a }} vs ${{ github.event.inputs.carrier_b }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.git_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run carrier comparison
+        run: |
+          mkdir -p reports
+          python scripts/cb_change_report.py compare-carriers \
+            --bundles-dir "Carrier Bundles" \
+            --carrier-a "${{ github.event.inputs.carrier_a }}" \
+            --carrier-b "${{ github.event.inputs.carrier_b }}" \
+            --output-json reports/carrier-compare.json \
+            --output-md  reports/carrier-compare.md \
+            --max-key-entries ${{ github.event.inputs.max_key_entries }}
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: carrier-compare-${{ github.event.inputs.carrier_a }}-vs-${{ github.event.inputs.carrier_b }}
+          path: reports/
+          retention-days: 30
+
+      - name: Create GitHub issue with diff
+        uses: actions/github-script@v7
+        env:
+          REPORT_JSON_PATH: reports/carrier-compare.json
+          REPORT_MD_PATH: reports/carrier-compare.md
+        with:
+          script: |
+            const fs = require('fs');
+            const MAX_BODY = 65536;
+
+            const report = JSON.parse(fs.readFileSync(process.env.REPORT_JSON_PATH, 'utf8'));
+            const md = fs.readFileSync(process.env.REPORT_MD_PATH, 'utf8').trim();
+            const { carrier_a, carrier_b, generated_at, summary } = report;
+
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+
+            const header = [
+              `# Carrier Bundle Comparison: \`${carrier_a}\` vs \`${carrier_b}\``,
+              ``,
+              `| | |`,
+              `|---|---|`,
+              `| **Carrier A** | \`${carrier_a}\` |`,
+              `| **Carrier B** | \`${carrier_b}\` |`,
+              `| **Git ref** | \`${{ github.event.inputs.git_ref }}\` |`,
+              `| **Generated** | ${generated_at} |`,
+              `| **Workflow run** | [${runUrl}](${runUrl}) |`,
+              ``,
+            ].join('\n');
+
+            const notice = '\n\n_[truncated — see workflow artifact for full report]_';
+            const available = MAX_BODY - header.length - notice.length - 10;
+            const body = header + (md.length <= available ? md : md.slice(0, available) + notice);
+
+            // Ensure label exists
+            try {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'carrier-compare',
+                color: '0075ca',
+                description: 'Carrier bundle side-by-side comparison',
+              });
+            } catch (_) { /* label already exists */ }
+
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Carrier Comparison: ${carrier_a} vs ${carrier_b}`,
+              body,
+              labels: ['carrier-compare'],
+            });
+
+            console.log(`Issue created: ${issue.data.html_url}`);

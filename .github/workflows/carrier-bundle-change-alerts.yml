@@ -496,10 +496,25 @@ jobs:
           IOS_OS=$(jq -r '.os // ""' /tmp/head-bundles/ipsw_metadata.json 2>/dev/null || echo "")
           IOS_IS_BETA="false"
 
-          IOS_VERSION_LABEL="${IOS_VERSION}"
-          if [[ "$IOS_BUILD" =~ [a-z]$ ]] || [[ "$IOS_OS" =~ [Dd]evelopment|[Bb]eta|[Ss]eed|[Rr][Cc] ]]; then
-            IOS_VERSION_LABEL="${IOS_VERSION} beta"
-            IOS_IS_BETA="true"
+          # Query ipsw.me for full release name including beta number (e.g. "26.4 beta 4")
+          IOS_FULL_VERSION=""
+          if [ -n "$IOS_BUILD" ] && [ "$IOS_BUILD" != "unknown" ]; then
+            IOS_FULL_VERSION=$(curl -fsSL "https://api.ipsw.me/v4/device/${DEVICE}?type=ipsw" 2>/dev/null | \
+              jq -r --arg b "$IOS_BUILD" '.firmwares[]? | select(.buildid==$b) | .version' 2>/dev/null | \
+              head -n1 | tr -d '\r' | xargs || true)
+          fi
+
+          if [ -n "$IOS_FULL_VERSION" ]; then
+            IOS_VERSION_LABEL="$IOS_FULL_VERSION"
+            if echo "$IOS_FULL_VERSION" | grep -qiE 'beta|rc|seed|development'; then
+              IOS_IS_BETA="true"
+            fi
+          else
+            IOS_VERSION_LABEL="${IOS_VERSION}"
+            if [[ "$IOS_BUILD" =~ [a-z]$ ]] || [[ "$IOS_OS" =~ [Dd]evelopment|[Bb]eta|[Ss]eed|[Rr][Cc] ]]; then
+              IOS_VERSION_LABEL="${IOS_VERSION} beta"
+              IOS_IS_BETA="true"
+            fi
           fi
 
           PORTUGAL_CHANGED="false"
@@ -579,6 +594,7 @@ jobs:
             echo "ios_version=${IOS_VERSION}"
             echo "ios_build=${IOS_BUILD}"
             echo "ios_is_beta=${IOS_IS_BETA}"
+            echo "ios_version_label=${IOS_VERSION_LABEL}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Upload report artifacts
@@ -604,6 +620,7 @@ jobs:
           IOS_VERSION: ${{ steps.issue_data.outputs.ios_version }}
           IOS_BUILD: ${{ steps.issue_data.outputs.ios_build }}
           IOS_IS_BETA: ${{ steps.issue_data.outputs.ios_is_beta }}
+          IOS_VERSION_LABEL: ${{ steps.issue_data.outputs.ios_version_label }}
           RELEASE_TAG: ${{ github.event.inputs.release_tag }}
           ISSUE_TITLE: ${{ steps.issue_data.outputs.title }}
         with:
@@ -763,27 +780,12 @@ jobs:
               ''
             ].join('\n');
 
-            const iosVersion = (process.env.IOS_VERSION || (ptJsonData && ptJsonData.ios_version) || '').trim();
-            const iosBuild = (process.env.IOS_BUILD || (ptJsonData && ptJsonData.ios_build) || '').trim();
-            const iosIsBeta = process.env.IOS_IS_BETA === 'true';
-            const releaseNotesUrl = 'https://developer.apple.com/documentation/ios-ipados-release-notes';
-            const iosDocsUrl = 'https://developer.apple.com/ios/';
-            const developerSearchQuery = iosVersion
-              ? `iOS ${iosVersion} ${iosIsBeta ? 'beta ' : ''}release notes ${iosBuild}`.trim()
-              : 'iOS release notes';
-            const developerSearchUrl = `https://developer.apple.com/search/?q=${encodeURIComponent(developerSearchQuery)}`;
+            const iosVersionLabel = (process.env.IOS_VERSION_LABEL || process.env.IOS_VERSION || '').trim();
 
             const appleReleaseNotesSection = [
               '## 🍎 Apple Release Notes',
               '',
-              `- [Apple iOS/iPadOS Release Notes](${releaseNotesUrl})`,
-              `- [Apple iOS Developer Page](${iosDocsUrl})`,
-              `- [Apple Developer Search (${developerSearchQuery})](${developerSearchUrl})`,
-              '- [Apple Security Releases](https://support.apple.com/en-us/100100)',
-              '',
-              iosIsBeta
-                ? '_Beta release notes can appear later and may require Apple Developer sign-in._'
-                : '_Release notes availability depends on Apple publication timing._',
+              `[${iosVersionLabel ? `iOS ${iosVersionLabel}` : 'iOS/iPadOS'} Release Notes](https://developer.apple.com/documentation/ios-ipados-release-notes)`,
               ''
             ].join('\n');
 
@@ -804,14 +806,7 @@ jobs:
             const fullArtifactSection = [
               '## 📦 Full Report Artifacts',
               '',
-              `Download full report files from [workflow artifacts](${process.env.RUN_URL}#artifacts)`,
-              '',
-              '**Included files:**',
-              '- `reports/cb-change-report.json` - Complete carrier bundle changes',
-              '- `reports/cb-change-report.md` - Human-readable report',
-              '- `reports/portugal-bundle-diff.txt` - Portugal country bundle diff',
-              '- `reports/pt-carrier-bundles-diff.txt` - PT carrier bundles diff',
-              '- `reports/portugal-changes.json` - Machine-readable PT changes',
+              `Full report files are available as [workflow artifacts](${process.env.RUN_URL}#artifacts).`,
               ''
             ].join('\n');
 
@@ -869,43 +864,18 @@ jobs:
             }
 
             // Determine labels
-            const labels = ['carrier-bundles', 'automated-report'];
-            if (portugalChanged) labels.push('portugal');
-            if (ptCarrierChanged) labels.push('pt-carriers');
-            const releaseTagRaw = (process.env.RELEASE_TAG || '').trim();
-            if (releaseTagRaw) {
-              const normalizedReleaseTag = releaseTagRaw
-                .toLowerCase()
-                .replace(/[^a-z0-9._-]+/g, '-')
-                .replace(/^-+|-+$/g, '');
-              if (normalizedReleaseTag) {
-                labels.push(normalizedReleaseTag);
-              }
-            }
-            
-            // Extract iOS version for label if available
-            if (ptJsonData && ptJsonData.ios_version) {
-              const version = ptJsonData.ios_version;
-              labels.push(`ios-${version}`);
-              if (ptJsonData.ios_release && ptJsonData.ios_release.includes('beta')) {
-                labels.push('beta');
-              }
-            }
-
-            // Automatic dynamic beta labels (no hardcoding)
             const iosVersionForLabels = (process.env.IOS_VERSION || '').trim();
             const iosBuildForLabels = (process.env.IOS_BUILD || '').trim();
             const iosIsBetaForLabels = process.env.IOS_IS_BETA === 'true'
               || /[a-z]$/i.test(iosBuildForLabels);
 
+            const labels = ['carrier-bundles', 'automated-report'];
+            if (iosVersionForLabels) labels.push(`ios-${iosVersionForLabels}`);
             if (iosIsBetaForLabels) {
-              labels.push('beta');
-              if (iosVersionForLabels) {
-                labels.push(`ios-${iosVersionForLabels}-beta`);
-              }
-              if (iosBuildForLabels) {
-                labels.push(`beta-build-${iosBuildForLabels.toLowerCase()}`);
-              }
+              const betaMatch = (process.env.IOS_VERSION_LABEL || '').match(/beta\s*(\d+)/i);
+              labels.push(betaMatch ? `beta${betaMatch[1]}` : 'beta');
+            } else {
+              labels.push('stable');
             }
 
             const dedupedLabels = Array.from(new Set(labels));

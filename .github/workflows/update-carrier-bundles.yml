@@ -11,7 +11,7 @@ on:
         required: false
         default: "true"
   schedule:
-    - cron: '17 */12 * * *'
+    - cron: '0 5 * * *'
 env:
   DEVICE: ${{ github.event.inputs.device || 'iPhone18,3' }}
   INCLUDE_BETA: ${{ github.event.inputs.include_beta || 'true' }}
@@ -243,7 +243,8 @@ jobs:
           fi
 
           BASE_SHA=$(git rev-parse HEAD)
-          git commit -m "iOS $IOS_VERSION ($IOS_BUILD) - Update Carrier Bundles"
+          FULL_VERSION="${{ steps.check_build.outputs.latest_version }}"
+          git commit -m "iOS ${FULL_VERSION:-$IOS_VERSION} ($IOS_BUILD) - Update Carrier Bundles"
           NEW_SHA=$(git rev-parse HEAD)
           git push
 

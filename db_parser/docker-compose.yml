@@ -1,0 +1,86 @@
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — persistent carrier bundle database
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${DB_NAME:-carrier_bundles}
+      POSTGRES_USER:     ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required – copy .env.example to .env}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      # Schema is applied automatically on first container init
+      - ./db_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-carrier_bundles}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Ingestor — runs once then exits
+  # Profiles:
+  #   ingest-gh     pull history from GitHub Issues + workflow artifacts
+  #   ingest-local  ingest from local report files (CI push mode)
+  #
+  # Usage:
+  #   docker compose -f db_parser/docker-compose.yml --profile ingest-gh    up
+  #   docker compose -f db_parser/docker-compose.yml --profile ingest-local up
+  # ---------------------------------------------------------------------------
+  ingestor-gh:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    profiles: ["ingest-gh"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST:            db
+      DB_PORT:            5432
+      DB_NAME:            ${DB_NAME:-carrier_bundles}
+      DB_USER:            ${DB_USER:-postgres}
+      DB_PASSWORD:        ${DB_PASSWORD:?DB_PASSWORD is required}
+      GITHUB_TOKEN:       ${GITHUB_TOKEN:?GITHUB_TOKEN is required for github-issues mode}
+      GITHUB_REPOSITORY:  ${GITHUB_REPOSITORY:-andmariano/ios-carrier-bundles}
+    volumes:
+      - ..:/workspace:ro
+    working_dir: /workspace
+    command:
+      - python
+      - db_parser/ingest_to_db.py
+      - --mode
+      - github-issues
+
+  ingestor-local:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    profiles: ["ingest-local"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST:     db
+      DB_PORT:     5432
+      DB_NAME:     ${DB_NAME:-carrier_bundles}
+      DB_USER:     ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - ..:/workspace:ro
+    working_dir: /workspace
+    command:
+      - python
+      - db_parser/ingest_to_db.py
+      - --mode
+      - local
+
+volumes:
+  pg_data:

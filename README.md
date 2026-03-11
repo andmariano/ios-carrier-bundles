@@ -1,122 +1,132 @@
 
 # iOS Carrier Bundles
 
-Automated collection of iOS Carrier Bundles extracted from the latest iOS releases.
+Automated collection of iOS Carrier Bundles extracted directly from the latest iOS IPSW releases.
 
-> **Compatibility Note:** This repository tracks carrier bundles starting with iOS 26+. Bundles may work on older iOS versions, but compatibility is not guaranteed and feature parity may vary.
-## Last Extraction Metadata
+> **Compatibility Note:** This repository tracks carrier bundles starting with iOS 26+. Bundles may work on older iOS versions, but compatibility is not guaranteed.
 
-#### Last Extraction Time
-`2026-03-10 02:54:34 UTC`
+---
 
-#### iOS Build Info
+## Latest Extraction
 
-| iOS Version | iOS Build | iOS Build Timestamp |
-| :-------- | :------- | :------------------ |
-| 26.4 | 23E5234a | 01 Mar 2026 04:49:18 UTC |
+| | |
+|---|---|
+| **Extracted at** | `2026-03-10 02:54:34 UTC` |
+| **iOS Version** | 26.4 |
+| **iOS Build** | 23E5234a |
+| **Build Timestamp** | 01 Mar 2026 04:49:18 UTC |
+| **Device** | iPhone 17 (`iPhone18,3`) |
 
-#### iOS Device Info
+---
 
-| Device Name | Device Identifier |
-| :-------- | :------- |
-| iPhone 17 | iPhone18,3 |
+## Workflows
 
-## Workflow Device Selection
+### 🔄 Update Carrier Bundles
 
-The GitHub Actions workflow supports manual inputs when you run `Update Carrier Bundles`.
+Runs **automatically once daily at 05:00 UTC**. Can also be triggered manually.
 
-- Default device: iPhone 17 Pro Max (`iPhone18,3`)
-- Override: Actions → `Update Carrier Bundles` → `Run workflow` → set `device`
-- If no input is provided, workflow uses the default `iPhone18,3`
-- `include_beta` defaults to `true` (set `false` for stable-only latest build checks); if the installed `ipsw` does not support `--beta`, workflow resolves latest beta build via `ipsw.me` (and falls back to `ipsw.dev`) and downloads by build ID
+- Checks if a new iOS build (stable or beta) is available for the target device
+- Only downloads and extracts when a new build is detected — skips otherwise
+- After a successful update, automatically triggers the **Carrier Bundle Change Alerts** workflow
 
-## Automation + Alerts
+**Manual inputs:**
 
-This repo includes two GitHub Actions workflows for automation:
+| Input | Default | Description |
+|---|---|---|
+| `device` | `iPhone18,3` | iOS device identifier |
+| `include_beta` | `true` | Include beta/RC releases in latest build check |
 
-- `Update Carrier Bundles`: checks every 12 hours (and manually) and only downloads/extracts when a new iOS build is detected
-- `Carrier Bundle Change Alerts`: runs on bundle updates, generates a diff report, and opens a GitHub issue with machine-readable JSON for Portugal changes
+---
 
-### Custom Compare (example: iOS 26.0 → 26.3)
+### 🔔 Carrier Bundle Change Alerts
 
-Use `Carrier Bundle Change Alerts` with `Run workflow` and set:
+Triggered automatically after each bundle update, or manually for custom version comparisons.
+Generates a diff report and opens a **GitHub Issue**.
 
-- `base_version`: iOS version for base snapshot (example: `26.0`)
-- `head_version`: iOS version for head snapshot (example: `26.3`)
-- `base_build`: optional base build for exact beta/RC targeting (example: `23E5222f`)
-- `head_build`: optional head build for exact beta/RC targeting (example: `23E5230a`)
-- `include_beta`: defaults to `true` (set `false` for stable-only lookup); if `--beta` is unsupported by installed `ipsw`, workflow resolves latest beta build via `ipsw.me` with `ipsw.dev` fallback
-- Optional fallback: `base_ref` / `head_ref` for git refs or commit SHAs
+**Manual inputs for custom version compare:**
 
-When `base_build`/`head_build` are set, build targeting takes priority for download lookup.
-When `base_version`/`head_version` are set, they take priority over refs.
-If version inputs are empty, `base_ref`/`head_ref` are used.
-If a ref is not found, the workflow automatically treats that value as an iOS version and downloads it for comparison.
+| Input | Description |
+|---|---|
+| `base_version` | iOS version for the base snapshot |
+| `head_version` | iOS version for the head snapshot |
+| `base_build` | Optional exact build for base (beta/RC targeting) |
+| `head_build` | Optional exact build for head (beta/RC targeting) |
+| `base_ref` / `head_ref` | Git ref or commit SHA fallback |
+| `include_beta` | Include beta/RC releases (`true` by default) |
 
-### What Gets Reported
+> Input priority: `build` > `version` > `ref`
 
-- Across all folders in `Carrier Bundles/*.bundle`, monitoring is only for:
-	- New carrier bundles
-	- Newly introduced plist `key_path` options (schema/key presence only)
-- Dedicated alert when `Country Bundles/Portugal.bundle` changes
-- Dedicated alert when any carrier bundle matching `Carrier Bundles/*_pt.bundle` changes
+**Every report issue includes:**
 
-Each time the report workflow runs on a bundle update, it opens a new issue with:
+| Section | Content |
+|---|---|
+| 📊 Quick Summary | Version change table for all affected bundles |
+| 🌍 Portugal Country Bundle | Value-level diff for `Country Bundles/Portugal.bundle` |
+| 📡 Portugal Carrier Bundles | Value-level diffs for all `Carrier Bundles/*_pt.bundle` |
+| 🔑 New Plist Keys | Newly detected keys across all carrier bundles |
+| 🤖 Machine-Readable JSON | Portugal changes in JSON format (collapsible) |
 
-- **Quick Summary Table:** Visual overview of version changes for country and carrier bundles
-- **Machine-Readable JSON:** Parsable Portugal changes in JSON format (collapsible)
-- Detailed value-level diffs for `Country Bundles/Portugal.bundle`
-- Detailed value-level diffs for `Carrier Bundles/*_pt.bundle`
-- A flat `## Newly Detected Plist Keys` list (`key_path` only, deduplicated)
-- A `## Full report artifact` section with links to full files including `portugal-changes.json`
-- **Labels:** Automatic issue tagging with `carrier-bundles`, `automated-report`, `portugal`, `pt-carriers`, `ios-{version}`, and `beta` (when applicable)
+**Auto-applied labels:** `carrier-bundles` · `automated-report` · `ios-{version}` · `beta4` / `beta3` / ... _(beta releases, numbered)_ · `stable` _(stable releases)_
 
-### Machine-Readable Portugal Changes
+---
 
-For automated processing of Portugal carrier bundle changes, the workflow generates `reports/portugal-changes.json` with structured data including:
+### 🔀 Compare Carrier Bundles — Between Carriers
 
-- iOS version and build information
+Manually triggered. Compares two carrier bundles side-by-side within the same iOS version and opens a **GitHub Issue**.
+
+**Inputs:**
+
+| Input | Default | Description |
+|---|---|---|
+| `git_ref` | `main` | Branch, tag, or SHA to read bundles from |
+| `carrier_a` | — | First carrier bundle name |
+| `carrier_b` | — | Second carrier bundle name |
+
+**The issue includes:**
+
+- Files present only in carrier A or only in carrier B
+- Files present in both but with different content
+- Plist key differences per file
+
+---
+
+## Machine-Readable Portugal Changes
+
+Every change report generates `reports/portugal-changes.json` with structured data:
+
+- iOS version and build
 - Bundle types (country/carrier) with version changes
 - Bundle identifiers and names
-- Timestamp of report generation
+- Report timestamp
 
 **Access methods:**
-1. **GitHub Issues:** JSON embedded in issue body (collapsible section)
-2. **Workflow Artifacts:** Download `carrier-bundle-change-report` artifact
-3. **Local Script:** Run `python3 scripts/generate_pt_changes.py` (see [scripts/README.md](scripts/README.md))
+1. **GitHub Issues** — JSON embedded in issue body (collapsible)
+2. **Workflow Artifacts** — download `carrier-bundle-change-report`
+3. **Local script** — `python3 scripts/generate_pt_changes.py` (see [scripts/README.md](scripts/README.md))
 
-**Example use cases:**
-- Automated monitoring systems
-- Version tracking databases
-- CI/CD integration for carrier testing
-- Historical change analysis
+---
 
-See [scripts/README.md](scripts/README.md) for detailed usage and JSON schema.
+## Folder Structure
 
-## Folder Explanations
+### `Carrier Bundles/`
 
-#### Carrier Bundles
-This folder contains the Carrier Bundles specific to each carrier.
-
-On the iOS filesystem, this folder can be found at:
+Carrier-specific bundles. iOS filesystem path:
 ```
-/System/Library/Carrier Bundles/iPhone
+/System/Library/Carrier Bundles/iPhone/
 ```
 
-These files are in Apple's binary plist format, so you will need an editor that can handle these kinds of files to view them.
+### `Country Bundles/`
 
-[The Apple Wiki](https://theapplewiki.com/) has further information on [Carrier Bundles](https://theapplewiki.com/wiki/Carrier_Bundle).
-
-#### Country Bundles
-This folder contains the Carrier Bundles that apply to all carriers within a country.
-
-On the iOS filesystem, this folder can be found at:
+Bundles that apply to all carriers within a country. iOS filesystem path:
 ```
 /System/Library/CountryBundles/iPhone/
 ```
 
-These files are in Apple's binary plist format, so you will need an editor that can handle these kinds of files to view them.
+All files are in Apple's binary plist format. Further reading: [The Apple Wiki — Carrier Bundles](https://theapplewiki.com/wiki/Carrier_Bundle).
+
+---
 
 ## Acknowledgements
- - [blacktop/ipsw](https://github.com/blacktop/ipsw)
- - [sgan81/apfs-fuse](https://github.com/sgan81/apfs-fuse)
+
+- [blacktop/ipsw](https://github.com/blacktop/ipsw)
+- [sgan81/apfs-fuse](https://github.com/sgan81/apfs-fuse)
