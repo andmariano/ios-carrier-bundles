@@ -4,14 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       git_ref:
-        description: "Git ref to checkout (branch, tag, or SHA — e.g. main)"
+        description: "Git ref to checkout (branch, tag, or SHA). Leave empty to use the branch this workflow is dispatched from."
         required: false
-        default: "main"
+        default: ""
       carrier_a:
-        description: "First carrier bundle name (e.g. NOS_pt.bundle)"
+        description: "First carrier bundle name (e.g. CarrierA_xx.bundle)"
         required: true
       carrier_b:
-        description: "Second carrier bundle name (e.g. Vodafone_pt.bundle)"
+        description: "Second carrier bundle name (e.g. CarrierB_xx.bundle)"
         required: true
       max_key_entries:
         description: "Max plist key entries per report section"
@@ -30,7 +30,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.git_ref }}
+          ref: ${{ github.event.inputs.git_ref || github.ref }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
