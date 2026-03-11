@@ -48,7 +48,8 @@ jobs:
             --carrier-b "${{ github.event.inputs.carrier_b }}" \
             --output-json reports/carrier-compare.json \
             --output-md  reports/carrier-compare.md \
-            --max-key-entries ${{ github.event.inputs.max_key_entries }}
+            --max-key-entries ${{ github.event.inputs.max_key_entries }} \
+            --country-bundles-dir "Country Bundles"
 
       - name: Upload report artifact
         uses: actions/upload-artifact@v4
