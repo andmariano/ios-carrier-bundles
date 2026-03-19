@@ -11,10 +11,10 @@ Automated collection of iOS Carrier Bundles extracted directly from the latest i
 
 | | |
 |---|---|
-| **Extracted at** | `2026-03-10 02:54:34 UTC` |
+| **Extracted at** | `2026-03-19 06:07:41 UTC` |
 | **iOS Version** | 26.4 |
-| **iOS Build** | 23E5234a |
-| **Build Timestamp** | 01 Mar 2026 04:49:18 UTC |
+| **iOS Build** | 23E244 |
+| **Build Timestamp** | 25 Feb 2026 06:09:54 UTC |
 | **Device** | iPhone 17 (`iPhone18,3`) |
 
 ---
